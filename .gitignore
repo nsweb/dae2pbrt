@@ -1,0 +1,13 @@
+# intermediate files
+bin/
+intermediate/
+*.sdf
+*.suo
+*.opensdf
+*.user
+*.o
+*.vc.db
+*.vc.opendb
+
+# collada files
+*.dae
