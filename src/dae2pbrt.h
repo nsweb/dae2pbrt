@@ -7,46 +7,69 @@
 
 using namespace tinyxml2;
 
-struct vec3
+namespace dae2pbrt
 {
-    float x, y, z;
-};
+	namespace Utils
+	{
+		static void ConvertStringToArray(const char* str, std::vector<int>& out_vector);
+		static void ConvertStringToArray(const char* str, std::vector<float>& out_vector);
+		static XMLElement* FindNodeById(XMLNode* node_parent, const char* node_name, const char* node_id);
+	};
 
-class Material
-{
-public:
-    Material();
-    ~Material();
-    
-    std::string name;
-};
+	struct vec2
+	{
+		float x, y;
+	};
 
-class Mesh
-{
-public:
-	Mesh();
-	~Mesh();
+	struct vec3
+	{
+		float x, y, z;
+	};
 
-    std::string name;
-    std::string material_name;
-    
-    std::vector<vec3> positions;
-    std::vector<vec3> normals;
-    std::vector<int> triangles;
-};
+	class Material
+	{
+	public:
+		Material();
+		~Material();
 
-struct Options
-{
-    std::string filename;
-};
+		std::string name;
+	};
 
-class Program
-{
-public:
-	Program();
-	~Program();
+	class Mesh
+	{
+	public:
+		Mesh();
+		~Mesh();
 
-	void ExtractMeshes(XMLNode* node_lib);
+		bool CreateFromXML(XMLNode* node_mesh);
+		bool ExtractVertices(XMLNode* node_poly, XMLNode* node_mesh);
+		bool ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, const int stride, std::vector<float>& dst_array);
 
-	std::vector<Mesh*> meshes;
+		std::string name;
+		std::string material_name;
+
+		std::vector<float> positions;
+		std::vector<float> normals;
+		std::vector<float> texcoords;
+
+		std::vector<int> polycounts;
+		std::vector<int> polys;
+	};
+
+	struct Options
+	{
+		std::string filename;
+	};
+
+	class Program
+	{
+	public:
+		Program();
+		~Program();
+
+		void ExtractMeshes(XMLNode* node_lib);
+
+		std::vector<Mesh*> meshes;
+	};
+
 };
