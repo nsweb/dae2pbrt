@@ -2,6 +2,7 @@
 */
 
 #include "dae2pbrt.h"
+#include <iostream>
 
 using namespace dae2pbrt;
 
@@ -16,7 +17,7 @@ int main(int argc, char *argv[])
 	if (argc <= 1)
 		return 0;
     
-    Options options;
+    Program program;
     
     // Process command-line arguments
     for (int i = 1; i < argc; ++i)
@@ -51,13 +52,11 @@ int main(int argc, char *argv[])
             Usage();
             return 0;
         } else
-            options.filename = argv[i];
+            program.options.filename = argv[i];
     }
 
-	Program program;
     XMLDocument doc;
-
-	XMLError result = doc.LoadFile( options.filename.c_str() );
+	XMLError result = doc.LoadFile( program.options.filename.c_str() );
 	if (result != XML_SUCCESS)
 		return 0;
 
@@ -69,9 +68,11 @@ int main(int argc, char *argv[])
 	}
 
 	XMLNode* node_lib_geom = node_root->FirstChildElement("library_geometries");
-	program.ExtractMeshes(node_lib_geom);
+	program.ImportMeshes(node_lib_geom);
 
 	XMLNode* node = node_lib_geom->NextSibling();
+    
+    program.ExportPlyMeshes();
         
     return 0;
 }
@@ -87,7 +88,7 @@ Mesh::~Mesh()
 	
 }
 
-bool Mesh::CreateFromXML(XMLNode* node_mesh)
+bool Mesh::ImportFromXML(XMLNode* node_mesh)
 {
 	// extract source, vertices and polylist
 	XMLElement* node_tri = node_mesh->FirstChildElement("triangles");
@@ -100,7 +101,7 @@ bool Mesh::CreateFromXML(XMLNode* node_mesh)
 			const char* idx_array = node_tri_idx->GetText();
 			Utils::ConvertStringToArray(idx_array, polys);
 
-			ExtractVertices(node_mesh, node_tri);
+			ImportVertices(node_mesh, node_tri);
 		}
 	}
 	else
@@ -118,7 +119,7 @@ bool Mesh::CreateFromXML(XMLNode* node_mesh)
 				Utils::ConvertStringToArray(vcount_array, polycounts);
 				Utils::ConvertStringToArray(idx_array, polys);
 
-				ExtractVertices(node_mesh, node_poly);
+				ImportVertices(node_mesh, node_poly);
 			}
 		}
 	}
@@ -126,7 +127,7 @@ bool Mesh::CreateFromXML(XMLNode* node_mesh)
 	return true;
 }
 
-bool Mesh::ExtractVertices(XMLNode* node_mesh, XMLNode* node_poly)
+bool Mesh::ImportVertices(XMLNode* node_mesh, XMLNode* node_poly)
 {
 	XMLElement* node_input = node_poly->FirstChildElement("input");
 	while (node_input)
@@ -188,6 +189,80 @@ bool Mesh::ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, co
 	return false;
 }
 
+void Mesh::ExportToPly(std::ofstream& stream) const
+{
+    bool binary_data = false;
+    
+    int num_points = positions.size() / 3;
+    int num_faces = polycounts.size() ? polycounts.size() : polys.size() / 3;
+    
+    stream << "ply" << std::endl;
+    if(binary_data)
+        stream << "format binary_little_endian 1.0" << std::endl;
+    else
+        stream << "format ascii 1.0" << std::endl;
+    //comment this file is a cube
+    
+    stream << "element vertex " << num_points << std::endl;
+    
+    stream << "property float32 x" << std::endl;
+    stream << "property float32 y" << std::endl;
+    stream << "property float32 z" << std::endl;
+    
+    stream << "element face " << num_faces << std::endl;
+    
+    stream << "property list int32 int32 vertex_indices" << std::endl;
+    stream << "end_header" << std::endl;
+    
+    /*if (binary_data)
+    {
+        vec3 vertex;
+        for (i = 0; i < num_points; ++i)
+        {
+            vertex = tri_vertices[i];  file.SerializeRaw(vertex);
+        }
+        
+        int32 num_edge = 3, tri_idx;
+        for (i = 0; i < num_tri; ++i)
+        {
+            file.SerializeRaw(num_edge);
+            tri_idx = tri_indices[3 * i];  file.SerializeRaw(tri_idx);
+            tri_idx = tri_indices[3 * i + 1];  file.SerializeRaw(tri_idx);
+            tri_idx = tri_indices[3 * i + 2];  file.SerializeRaw(tri_idx);
+            //fprintf( fp, "f %d %d %d\n", 1 + tri_indices[3*i], 1 + tri_indices[3*i+1], 1 + tri_indices[3*i+2] );
+        }
+    }
+    else*/
+    {
+        for (int p_idx = 0; p_idx < num_points; ++p_idx)
+        {
+            stream << positions[3*p_idx] << " " << positions[3*p_idx + 1] << " " << positions[3*p_idx + 2] << std::endl;
+        }
+        
+        if (polycounts.size())
+        {
+            int v_offset = 0;
+            for (int face_idx = 0; face_idx < polycounts.size(); ++face_idx)
+            {
+                int poly_size = polycounts[face_idx];
+                stream << poly_size << " ";
+                
+                for (int v_idx = 0; v_idx < poly_size; ++v_idx, ++v_offset)
+                    stream << polys[v_offset] << " ";
+                
+                stream << std::endl;
+            }
+        }
+        else
+        {
+            for (int face_idx = 0; face_idx < num_faces; ++face_idx)
+            {
+                stream << "3 " << polys[3*face_idx] << " " << polys[3*face_idx + 1] << " " << polys[3*face_idx + 2] << std::endl;
+            }
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////
 Program::Program()
 {
@@ -201,7 +276,7 @@ Program::~Program()
 	meshes.clear();
 }
 
-void Program::ExtractMeshes(XMLNode* node_lib)
+void Program::ImportMeshes(XMLNode* node_lib)
 {
 	XMLElement* node_geom = node_lib->FirstChildElement("geometry");
 	while (node_geom)
@@ -214,7 +289,7 @@ void Program::ExtractMeshes(XMLNode* node_lib)
 		{
             Mesh* mesh = new Mesh();
             mesh->name = id;
-			mesh->CreateFromXML(node_mesh);
+			mesh->ImportFromXML(node_mesh);
 			meshes.push_back(mesh);
 		}
 
@@ -262,6 +337,26 @@ void Program::ExtractMeshes(XMLNode* node_lib)
 #endif
 }
 
+void Program::ExportPlyMeshes() const
+{
+    std::string path, plyname;
+    Utils::GetFilePath(options.filename, path);
+    
+    for (int mesh_idx = 0; mesh_idx < meshes.size(); mesh_idx++)
+    {
+        std::ofstream ply;
+        plyname = path + meshes[mesh_idx]->name + ".ply";
+        ply.open(plyname, std::ios::out | std::ios::binary);
+        
+        if (ply.is_open())
+            meshes[mesh_idx]->ExportToPly(ply);
+        else
+        {
+            //std::cerr << "open failed: " << strerror(errno) << '\n';
+        }
+    }
+}
+
 
 void Utils::ConvertStringToArray(const char* str, std::vector<int>& out_vector)
 {
@@ -299,4 +394,18 @@ XMLElement* Utils::FindNodeById(XMLNode* node_parent, const char* node_name, con
 		node = node->NextSiblingElement(node_name);
 	}
 	return nullptr;
+}
+
+void Utils::GetFilePath(const std::string& filename, std::string& out_path)
+{
+    int delimiter_idx = filename.rfind('/');
+    if (std::string::npos == delimiter_idx)
+        delimiter_idx = filename.rfind('\\');
+    
+    if (std::string::npos != delimiter_idx)
+    {
+        out_path = filename.substr(0, delimiter_idx+1);
+    }
+    else
+        out_path = "";
 }

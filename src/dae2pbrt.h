@@ -4,6 +4,7 @@
 #include "tinyxml2/tinyxml2.h"
 #include <vector>
 #include <string>
+#include <fstream>
 
 using namespace tinyxml2;
 
@@ -14,6 +15,7 @@ namespace dae2pbrt
 		static void ConvertStringToArray(const char* str, std::vector<int>& out_vector);
 		static void ConvertStringToArray(const char* str, std::vector<float>& out_vector);
 		static XMLElement* FindNodeById(XMLNode* node_parent, const char* node_name, const char* node_id);
+        static void GetFilePath(const std::string& filename, std::string& out_path);
 	};
 
 	struct vec2
@@ -41,9 +43,10 @@ namespace dae2pbrt
 		Mesh();
 		~Mesh();
 
-		bool CreateFromXML(XMLNode* node_mesh);
-		bool ExtractVertices(XMLNode* node_poly, XMLNode* node_mesh);
+		bool ImportFromXML(XMLNode* node_mesh);
+		bool ImportVertices(XMLNode* node_poly, XMLNode* node_mesh);
 		bool ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, const int stride, std::vector<float>& dst_array);
+        void ExportToPly(std::ofstream& stream) const;
 
 		std::string name;
 		std::string material_name;
@@ -67,8 +70,10 @@ namespace dae2pbrt
 		Program();
 		~Program();
 
-		void ExtractMeshes(XMLNode* node_lib);
+		void ImportMeshes(XMLNode* node_lib);
+        void ExportPlyMeshes() const;
 
+        Options options;
 		std::vector<Mesh*> meshes;
 	};
 
