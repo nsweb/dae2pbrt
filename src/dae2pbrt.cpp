@@ -81,15 +81,29 @@ int main(int argc, char *argv[])
 ////////////////////////////////////////////////////////////////////////
 Mesh::Mesh()
 {
-
+    Reset();
 }
 Mesh::~Mesh()
 {
 	
 }
 
+void Mesh::Reset()
+{
+    position_stride = 0;
+    normal_stride = 0;
+    texcoord_stride = 0;
+    positions.clear();
+    normals.clear();
+    texcoords.clear();
+    polycounts.clear();
+    polys.clear();
+}
+
 bool Mesh::ImportFromXML(XMLNode* node_mesh)
 {
+    Reset();
+    
 	// extract source, vertices and polylist
 	XMLElement* node_tri = node_mesh->FirstChildElement("triangles");
 	if (node_tri)
@@ -150,16 +164,19 @@ bool Mesh::ImportVertices(XMLNode* node_mesh, XMLNode* node_poly)
 					{
 						source_id = (source_pos[0] == '#' ? source_pos + 1 : source_pos);
 
+                        position_stride = 3;
 						ExtractSourceFloatArray(node_mesh, source_id, 3, positions);
 					}
 				}
 			}
 			else if (0 == std::strcmp(semantic, "NORMAL"))
 			{
+                normal_stride = 3;
 				ExtractSourceFloatArray(node_mesh, source_id, 3, normals);
 			}
 			else if (0 == std::strcmp(semantic, "TEXCOORD"))
 			{
+                texcoord_stride = 2;
 				ExtractSourceFloatArray(node_mesh, source_id, 2, texcoords);
 			}
 		}
@@ -189,11 +206,39 @@ bool Mesh::ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, co
 	return false;
 }
 
+void Mesh::Repair()
+{
+    // ensure that mesh is not degenerated
+    int num_points = position_stride ? positions.size() / position_stride : 0;
+    int position_size = num_points * position_stride;
+    positions.resize(position_size);
+    
+    int num_normals = normal_stride ? normals.size() / normal_stride : 0;
+    int normal_size = num_normals * normal_stride;
+    normals.resize(normal_size);
+    if (normal_stride && num_normals < num_points)
+    {
+        // warning: less normals than positions
+        normals.resize(num_points * normal_stride, 0.577350259f);
+    }
+    
+    int num_texcoords = texcoord_stride ? texcoords.size() / texcoord_stride : 0;
+    int texcoord_size = num_texcoords * texcoord_stride;
+    texcoords.resize(normal_size);
+    if (texcoord_stride && num_texcoords < num_points)
+    {
+        // warning: less texcoords than positions
+        texcoords.resize(num_points * texcoord_stride, 0.f);
+    }
+    
+    // check for degenerate face (only triangles)
+}
+
 void Mesh::ExportToPly(std::ofstream& stream) const
 {
     bool binary_data = false;
     
-    int num_points = positions.size() / 3;
+    int num_points = position_stride ? positions.size() / position_stride : 0;
     int num_faces = polycounts.size() ? polycounts.size() : polys.size() / 3;
     
     stream << "ply" << std::endl;
@@ -205,13 +250,20 @@ void Mesh::ExportToPly(std::ofstream& stream) const
     
     stream << "element vertex " << num_points << std::endl;
     
-    stream << "property float32 x" << std::endl;
-    stream << "property float32 y" << std::endl;
-    stream << "property float32 z" << std::endl;
+    stream << "property float x" << std::endl;
+    stream << "property float y" << std::endl;
+    stream << "property float z" << std::endl;
+    
+    if (normal_stride)
+    {
+        stream << "property float nx" << std::endl;
+        stream << "property float ny" << std::endl;
+        stream << "property float nz" << std::endl;
+    }
     
     stream << "element face " << num_faces << std::endl;
     
-    stream << "property list int32 int32 vertex_indices" << std::endl;
+    stream << "property list uchar int vertex_indices" << std::endl;
     stream << "end_header" << std::endl;
     
     /*if (binary_data)
@@ -236,7 +288,11 @@ void Mesh::ExportToPly(std::ofstream& stream) const
     {
         for (int p_idx = 0; p_idx < num_points; ++p_idx)
         {
-            stream << positions[3*p_idx] << " " << positions[3*p_idx + 1] << " " << positions[3*p_idx + 2] << std::endl;
+            for (int c_idx = 0; c_idx < position_stride; ++c_idx)
+                stream << positions[position_stride*p_idx + c_idx] << " ";
+            for (int c_idx = 0; c_idx < normal_stride; ++c_idx)
+                stream << normals[normal_stride*p_idx + c_idx] << " ";
+            stream << std::endl;
         }
         
         if (polycounts.size())
@@ -290,6 +346,7 @@ void Program::ImportMeshes(XMLNode* node_lib)
             Mesh* mesh = new Mesh();
             mesh->name = id;
 			mesh->ImportFromXML(node_mesh);
+            mesh->Repair();
 			meshes.push_back(mesh);
 		}
 

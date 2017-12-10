@@ -43,14 +43,19 @@ namespace dae2pbrt
 		Mesh();
 		~Mesh();
 
+        void Reset();
 		bool ImportFromXML(XMLNode* node_mesh);
 		bool ImportVertices(XMLNode* node_poly, XMLNode* node_mesh);
 		bool ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, const int stride, std::vector<float>& dst_array);
         void ExportToPly(std::ofstream& stream) const;
+        void Repair();
 
 		std::string name;
 		std::string material_name;
 
+        int position_stride;
+        int normal_stride;
+        int texcoord_stride;
 		std::vector<float> positions;
 		std::vector<float> normals;
 		std::vector<float> texcoords;
