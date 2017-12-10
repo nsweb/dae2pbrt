@@ -16,7 +16,8 @@ namespace dae2pbrt
 		static void ConvertStringToArray(const char* str, std::vector<int>& out_vector);
 		static void ConvertStringToArray(const char* str, std::vector<float>& out_vector);
 		static XMLElement* FindNodeById(XMLNode* node_parent, const char* node_name, const char* node_id);
-        static void GetFilePath(const std::string& filename, std::string& out_path);
+        static void ExtractFilePath(const std::string& fullname, std::string& out_path);
+        static void ExtractFilePath(const std::string& fullname, std::string& out_path, std::string& out_filename, std::string& out_extension);
 	};
 
 	class Material
@@ -83,6 +84,7 @@ namespace dae2pbrt
 		void ImportMeshes(XMLNode* node_lib);
         void ImportNodes(XMLNode* node_lib);
         void ExportPlyMeshes() const;
+        void ExportPbrtScene() const;
 
         Options options;
         std::map<std::string, Mesh*> meshes;

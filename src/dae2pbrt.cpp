@@ -74,6 +74,7 @@ int main(int argc, char *argv[])
     program.ImportNodes(node_lib_nodes);
     
     program.ExportPlyMeshes();
+    program.ExportPbrtScene();
         
     return 0;
 }
@@ -242,48 +243,36 @@ void Mesh::ExportToPly(std::ofstream& stream) const
     int num_points = position_stride ? positions.size() / position_stride : 0;
     int num_faces = polycounts.size() ? polycounts.size() : polys.size() / 3;
     
-    stream << "ply" << std::endl;
+    stream << "ply\n";
     if(binary_data)
-        stream << "format binary_little_endian 1.0" << std::endl;
+        stream << "format binary_little_endian 1.0\n";
     else
-        stream << "format ascii 1.0" << std::endl;
-    //comment this file is a cube
+        stream << "format ascii 1.0\n";
+    
+    stream << "comment " << name.c_str() << std::endl;
+    stream << "comment exported from dae2pbrt\n";
     
     stream << "element vertex " << num_points << std::endl;
     
-    stream << "property float x" << std::endl;
-    stream << "property float y" << std::endl;
-    stream << "property float z" << std::endl;
+    stream << "property float x\n";
+    stream << "property float y\n";
+    stream << "property float z\n";
     
     if (normal_stride)
     {
-        stream << "property float nx" << std::endl;
-        stream << "property float ny" << std::endl;
-        stream << "property float nz" << std::endl;
+        stream << "property float nx\n";
+        stream << "property float ny\n";
+        stream << "property float nz\n";
     }
     
     stream << "element face " << num_faces << std::endl;
     
-    stream << "property list uchar int vertex_indices" << std::endl;
-    stream << "end_header" << std::endl;
+    stream << "property list uchar int vertex_indices\n";
+    stream << "end_header\n";
     
     /*if (binary_data)
     {
-        vec3 vertex;
-        for (i = 0; i < num_points; ++i)
-        {
-            vertex = tri_vertices[i];  file.SerializeRaw(vertex);
-        }
-        
-        int32 num_edge = 3, tri_idx;
-        for (i = 0; i < num_tri; ++i)
-        {
-            file.SerializeRaw(num_edge);
-            tri_idx = tri_indices[3 * i];  file.SerializeRaw(tri_idx);
-            tri_idx = tri_indices[3 * i + 1];  file.SerializeRaw(tri_idx);
-            tri_idx = tri_indices[3 * i + 2];  file.SerializeRaw(tri_idx);
-            //fprintf( fp, "f %d %d %d\n", 1 + tri_indices[3*i], 1 + tri_indices[3*i+1], 1 + tri_indices[3*i+2] );
-        }
+
     }
     else*/
     {
@@ -518,7 +507,7 @@ void Program::ImportNodes(XMLNode* node_lib)
 void Program::ExportPlyMeshes() const
 {
     std::string path, plyname;
-    Utils::GetFilePath(options.filename, path);
+    Utils::ExtractFilePath(options.filename, path);
     
     std::map<std::string, Mesh*>::const_iterator it_mesh;
     for (it_mesh = meshes.begin(); it_mesh != meshes.end(); it_mesh++)
@@ -537,6 +526,46 @@ void Program::ExportPlyMeshes() const
     }
 }
 
+void Program::ExportPbrtScene() const
+{
+    std::string path, filename, extname, pbrtname;
+    Utils::ExtractFilePath(options.filename, path, filename, extname);
+    
+    std::ofstream pbrt;
+    pbrtname = path + filename + ".pbrt";
+    pbrt.open(pbrtname, std::ios::out | std::ios::binary);
+    
+    if (pbrt.is_open())
+    {
+        std::ofstream& stream = pbrt;
+        stream << "WorldBegin\n";
+        
+        std::map<std::string, Mesh*>::const_iterator it_mesh;
+        for (it_mesh = meshes.begin(); it_mesh != meshes.end(); it_mesh++)
+        {
+            Mesh* mesh = it_mesh->second;
+            
+            stream << "\tObjectBegin \"" << mesh->name.c_str() << "\"\n";
+            stream << "\tShape \"plymesh\" \"string filename\" \"" << mesh->name.c_str() << ".ply" << "\"\n";
+            stream << "\tObjectEnd\n";
+        }
+        
+        for (int mesh_idx = 0; mesh_idx < mesh_instances.size(); mesh_idx++)
+        {
+             MeshInstance* mesh_instance = mesh_instances[mesh_idx];
+             
+             stream << "\tTransformBegin\n";
+             stream << "\tTransform [";
+             for (int c_idx = 0; c_idx < mesh_instance->matrix.size(); c_idx++)
+                 stream << mesh_instance->matrix[c_idx] << " ";
+             stream << "]\n";
+             stream << "\tObjectInstance \"" << mesh_instance->mesh_name.c_str() << "\"\n";
+             stream << "\tTransformEnd\n";
+        }
+        
+        stream << "WorldEnd" << std::endl;
+    }
+}
 
 void Utils::ConvertStringToArray(const char* str, std::vector<int>& out_vector)
 {
@@ -576,16 +605,42 @@ XMLElement* Utils::FindNodeById(XMLNode* node_parent, const char* node_name, con
 	return nullptr;
 }
 
-void Utils::GetFilePath(const std::string& filename, std::string& out_path)
+void Utils::ExtractFilePath(const std::string& fullname, std::string& out_path)
 {
-    int delimiter_idx = filename.rfind('/');
+    int delimiter_idx = fullname.rfind('/');
     if (std::string::npos == delimiter_idx)
-        delimiter_idx = filename.rfind('\\');
+        delimiter_idx = fullname.rfind('\\');
     
     if (std::string::npos != delimiter_idx)
     {
-        out_path = filename.substr(0, delimiter_idx+1);
+        out_path = fullname.substr(0, delimiter_idx+1);
     }
     else
         out_path = "";
+}
+
+void Utils::ExtractFilePath(const std::string& fullname, std::string& out_path, std::string& out_filename, std::string& out_extension)
+{
+    int delimiter_idx = fullname.rfind('/');
+    if (std::string::npos == delimiter_idx)
+        delimiter_idx = fullname.rfind('\\');
+    
+    if (std::string::npos != delimiter_idx)
+    {
+        out_path = fullname.substr(0, delimiter_idx+1);
+    }
+    else
+        out_path = "";
+    
+    int ext_idx = fullname.rfind('.');
+    if (std::string::npos != ext_idx && ext_idx > delimiter_idx)
+    {
+        out_filename = fullname.substr(delimiter_idx+1, ext_idx - delimiter_idx - 1);
+        out_extension = fullname.substr(ext_idx+1);
+    }
+    else
+    {
+        out_filename = fullname.substr(delimiter_idx+1);
+        out_extension = "";
+    }
 }
