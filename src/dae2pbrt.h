@@ -4,6 +4,7 @@
 #include "tinyxml2/tinyxml2.h"
 #include <vector>
 #include <string>
+#include <map>
 #include <fstream>
 
 using namespace tinyxml2;
@@ -16,16 +17,6 @@ namespace dae2pbrt
 		static void ConvertStringToArray(const char* str, std::vector<float>& out_vector);
 		static XMLElement* FindNodeById(XMLNode* node_parent, const char* node_name, const char* node_id);
         static void GetFilePath(const std::string& filename, std::string& out_path);
-	};
-
-	struct vec2
-	{
-		float x, y;
-	};
-
-	struct vec3
-	{
-		float x, y, z;
 	};
 
 	class Material
@@ -51,7 +42,6 @@ namespace dae2pbrt
         void Repair();
 
 		std::string name;
-		std::string material_name;
 
         int position_stride;
         int normal_stride;
@@ -63,6 +53,21 @@ namespace dae2pbrt
 		std::vector<int> polycounts;
 		std::vector<int> polys;
 	};
+    
+    class MeshInstance
+    {
+    public:
+        MeshInstance();
+        ~MeshInstance();
+        
+        void Reset();
+        bool ImportFromXML(XMLNode* node_sub);
+
+        std::string mesh_name;
+        std::string material_name;
+
+        std::vector<float> matrix;
+    };
 
 	struct Options
 	{
@@ -76,10 +81,12 @@ namespace dae2pbrt
 		~Program();
 
 		void ImportMeshes(XMLNode* node_lib);
+        void ImportNodes(XMLNode* node_lib);
         void ExportPlyMeshes() const;
 
         Options options;
-		std::vector<Mesh*> meshes;
+        std::map<std::string, Mesh*> meshes;
+        std::vector<MeshInstance*> mesh_instances;
 	};
 
 };

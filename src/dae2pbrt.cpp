@@ -70,7 +70,8 @@ int main(int argc, char *argv[])
 	XMLNode* node_lib_geom = node_root->FirstChildElement("library_geometries");
 	program.ImportMeshes(node_lib_geom);
 
-	XMLNode* node = node_lib_geom->NextSibling();
+    XMLNode* node_lib_nodes = node_root->FirstChildElement("library_nodes");
+    program.ImportNodes(node_lib_nodes);
     
     program.ExportPlyMeshes();
         
@@ -320,16 +321,68 @@ void Mesh::ExportToPly(std::ofstream& stream) const
 }
 
 ////////////////////////////////////////////////////////////////////////
+MeshInstance::MeshInstance()
+{
+    Reset();
+}
+MeshInstance::~MeshInstance()
+{
+    
+}
+
+void MeshInstance::Reset()
+{
+    matrix.clear();
+}
+
+bool MeshInstance::ImportFromXML(XMLNode* node_sub)
+{
+    XMLElement* node_mat = node_sub->FirstChildElement("matrix");
+    if (node_mat)
+    {
+        const char* str_array = node_mat->GetText();
+        Utils::ConvertStringToArray(str_array, matrix);
+    }
+    
+    XMLElement* node_inst = node_sub->FirstChildElement("instance_geometry");
+    if (node_inst)
+    {
+        const char* url_name = node_inst->Attribute("url");
+        mesh_name = (url_name && url_name[0] == '#' ? url_name + 1 : url_name);
+        
+        XMLElement* node_mat = node_inst->FirstChildElement("bind_material");
+        if (node_mat)
+        {
+            XMLElement* node_tech = node_mat->FirstChildElement("technique_common");
+            if (node_tech)
+            {
+                XMLElement* node_inst_mat = node_tech->FirstChildElement("instance_material");
+                if (node_inst_mat)
+                {
+                    const char* target_name = node_inst_mat->Attribute("target");
+                    material_name = (target_name && target_name[0] == '#' ? target_name + 1 : target_name);
+                }
+            }
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////
 Program::Program()
 {
 
 }
 Program::~Program()
 {
-	for (int mesh_idx = 0; mesh_idx < meshes.size(); mesh_idx++)
-		delete meshes[mesh_idx];
+    std::map<std::string, Mesh*>::iterator it_mesh;
+	for (it_mesh = meshes.begin(); it_mesh != meshes.end(); it_mesh++)
+		delete it_mesh->second;
+    
+    for (int mesh_idx = 0; mesh_idx < mesh_instances.size(); mesh_idx++)
+        delete mesh_instances[mesh_idx];
 	
 	meshes.clear();
+    mesh_instances.clear();
 }
 
 void Program::ImportMeshes(XMLNode* node_lib)
@@ -347,7 +400,7 @@ void Program::ImportMeshes(XMLNode* node_lib)
             mesh->name = id;
 			mesh->ImportFromXML(node_mesh);
             mesh->Repair();
-			meshes.push_back(mesh);
+			meshes[id] = mesh;
 		}
 
 		node_geom = node_geom->NextSiblingElement("geometry");
@@ -394,19 +447,89 @@ void Program::ImportMeshes(XMLNode* node_lib)
 #endif
 }
 
+void Program::ImportNodes(XMLNode* node_lib)
+{
+    XMLElement* node = node_lib->FirstChildElement("node");
+    while (node)
+    {
+        const char* id = node->Attribute("id");
+        
+        // parse sub-nodes
+        XMLElement* node_sub = node->FirstChildElement("node");
+        while (node_sub)
+        {
+            const char* instance_id = node_sub->Attribute("id");
+
+            MeshInstance* mesh_instance = new MeshInstance();
+            mesh_instance->mesh_name = instance_id;
+            mesh_instance->ImportFromXML(node_sub);
+            mesh_instances.push_back(mesh_instance);
+            
+            node_sub = node_sub->NextSiblingElement("node");
+        }
+        
+        node = node->NextSiblingElement("node");
+    }
+    
+#if 0
+<library_nodes>
+    <node id="Node-UntitledModel.io">
+        <node id="Inner-Node-UntitledModel.io-0">
+            <matrix>1.00000    0.00000    0.00000    0.00000
+                0.00000    1.00000    0.00000    -24.00000
+                0.00000    0.00000    1.00000    -10.00000
+                0.00000    0.00000    0.00000    1.00000
+            </matrix>
+            <matrix>0.99375 0 0 0
+                    0 0.9910714 0 0.08928572
+                    0 0 0.9875 0
+                    0 0 0 1</matrix>
+            <instance_geometry url="#3004.dat">
+                <bind_material>
+                    <technique_common>
+                        <instance_material symbol="Base" target="#Color-1"/>
+                    </technique_common>
+                </bind_material>
+            </instance_geometry>
+        </node>
+        <node id="Inner-Node-UntitledModel.io-1">
+            <matrix>1.00000    0.00000    0.00000    60.00000
+                0.00000    1.00000    0.00000    -24.00000
+                0.00000    0.00000    1.00000    -10.00000
+                0.00000    0.00000    0.00000    1.00000
+            </matrix>
+            <matrix>0.99375 0 0 0
+                    0 0.9910714 0 0.08928572
+                    0 0 0.9875 0
+                    0 0 0 1</matrix>
+            <instance_geometry url="#3004.dat">
+                <bind_material>
+                    <technique_common>
+                        <instance_material symbol="Base" target="#Color-5"/>
+                    </technique_common>
+                </bind_material>
+            </instance_geometry>
+        </node>
+    </node>
+</library_nodes>
+#endif
+}
+
 void Program::ExportPlyMeshes() const
 {
     std::string path, plyname;
     Utils::GetFilePath(options.filename, path);
     
-    for (int mesh_idx = 0; mesh_idx < meshes.size(); mesh_idx++)
+    std::map<std::string, Mesh*>::const_iterator it_mesh;
+    for (it_mesh = meshes.begin(); it_mesh != meshes.end(); it_mesh++)
     {
+        Mesh* mesh = it_mesh->second;
         std::ofstream ply;
-        plyname = path + meshes[mesh_idx]->name + ".ply";
+        plyname = path + mesh->name + ".ply";
         ply.open(plyname, std::ios::out | std::ios::binary);
         
         if (ply.is_open())
-            meshes[mesh_idx]->ExportToPly(ply);
+            mesh->ExportToPly(ply);
         else
         {
             //std::cerr << "open failed: " << strerror(errno) << '\n';
