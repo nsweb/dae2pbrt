@@ -26,7 +26,13 @@ namespace dae2pbrt
 		Material();
 		~Material();
 
+        void Reset();
+        bool ImportFromXML(XMLNode* node);
+        
 		std::string name;
+        std::vector<float> diffuse;
+        std::vector<float> specular;
+        float shininess;
 	};
 
 	class Mesh
@@ -82,6 +88,7 @@ namespace dae2pbrt
 		Program();
 		~Program();
 
+        void ImportMaterials(XMLNode* node_lib_effect);
 		void ImportMeshes(XMLNode* node_lib);
         void ImportNodes(XMLNode* node_lib);
 		void ImportVisualScene(XMLNode* node_lib);
@@ -90,6 +97,7 @@ namespace dae2pbrt
 		bool DoesMeshExist(MeshInstance* instance) const;
 
         Options options;
+        std::map<std::string, Material*> materials;
         std::map<std::string, Mesh*> meshes;
         std::vector<MeshInstance*> mesh_instances;
 	};

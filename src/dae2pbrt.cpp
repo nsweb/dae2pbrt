@@ -67,6 +67,10 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
+    XMLNode* node_lib_effect = node_root->FirstChildElement("library_effects");
+    if (node_lib_effect)
+        program.ImportMaterials(node_lib_effect);
+    
 	XMLNode* node_lib_geom = node_root->FirstChildElement("library_geometries");
 	if (node_lib_geom)
 		program.ImportMeshes(node_lib_geom);
@@ -89,6 +93,57 @@ int main(int argc, char *argv[])
 
 
 ////////////////////////////////////////////////////////////////////////
+Material::Material()
+{
+    Reset();
+}
+Material::~Material()
+{
+    
+}
+
+void Material::Reset()
+{
+    diffuse.clear();
+    specular.clear();
+    shininess = 0.f;
+}
+bool Material::ImportFromXML(XMLNode* node_mat)
+{
+    XMLElement* node = node_mat->FirstChildElement("diffuse");
+    if (node)
+    {
+        XMLElement* node_col = node->FirstChildElement("color");
+        if (node_col)
+        {
+            const char* idx_array = node_col->GetText();
+            Utils::ConvertStringToArray(idx_array, diffuse);
+        }
+    }
+    
+    node = node_mat->FirstChildElement("specular");
+    if (node)
+    {
+        XMLElement* node_col = node->FirstChildElement("color");
+        if (node_col)
+        {
+            const char* idx_array = node_col->GetText();
+            Utils::ConvertStringToArray(idx_array, specular);
+        }
+    }
+    
+    node = node_mat->FirstChildElement("shininess");
+    if (node)
+    {
+        XMLElement* node_col = node->FirstChildElement("float");
+        if (node_col)
+        {
+            shininess = node_col->FloatText();
+        }
+    }
+    return true;
+}
+
 Mesh::Mesh()
 {
     Reset();
@@ -384,6 +439,55 @@ Program::~Program()
     mesh_instances.clear();
 }
 
+void Program::ImportMaterials(XMLNode* node_lib)
+{
+    XMLElement* node_effect = node_lib->FirstChildElement("effect");
+    while (node_effect)
+    {
+        const char* id = node_effect->Attribute("id");
+        XMLElement* node_profile = node_effect->FirstChildElement("profile_COMMON");
+        if (node_profile)
+        {
+            XMLElement* node_tech = node_profile->FirstChildElement("technique");
+            if (node_tech)
+            {
+                XMLElement* node = node_tech->FirstChildElement();
+                if (node)
+                {
+                    Material* mat = new Material();
+                    mat->name = id;
+                    mat->ImportFromXML(node);
+                    materials[id] = mat;
+                }
+            }
+        }
+        
+        node_effect = node_effect->NextSiblingElement("effect");
+    }
+    
+#if 0
+<library_effects>
+    <effect id ="Color-1-fx">
+        <profile_COMMON>
+            <technique sid="common">
+                <phong>
+                <emission><color sid="emission"> 0 0 0 1</color></emission>
+                <ambient><color sid="ambient"> 0 0 0 1</color></ambient>
+                <diffuse><color sid="diffuse"> 0.9921875 0.9921875 0.9921875 1 </color></diffuse>
+                <specular><color sid="specular"> 0.5 0.5 0.5 1 </color></specular>
+                <shininess><float sid="shininess"> 16 </float></shininess>
+                <reflective><color sid="reflective"> 0 0 0 1</color></reflective>
+                <transparent><color sid="transparent"> 0 0 0 1</color></transparent>
+                <transparency><float sid="transparency"> 1 </float></transparency>
+                <index_of_refraction><float sid="index_of_refraction"> 0 </float></index_of_refraction>
+                </phong>
+            </technique>
+        </profile_COMMON>
+    </effect>
+</library_effects>
+#endif
+}
+
 void Program::ImportMeshes(XMLNode* node_lib)
 {
 	XMLElement* node_geom = node_lib->FirstChildElement("geometry");
@@ -619,6 +723,7 @@ void Program::ExportPbrtScene() const
             stream << "\tShape \"plymesh\" \"string filename\" \"" << mesh->name.c_str() << ".ply" << "\"\n";
             stream << "\tObjectEnd\n";
         }
+        //MakeNamedMaterial "BlackDiffuse" "string type" [ "matte" ] "rgb Kd" [ 0.000273 0.000273 0.000273 ]
         
         for (int mesh_idx = 0; mesh_idx < mesh_instances.size(); mesh_idx++)
         {
@@ -629,8 +734,15 @@ void Program::ExportPbrtScene() const
 				 if (!mesh_instance->matrix.empty())
 				 {
 					 stream << "\tTransform [";
-					 for (int c_idx = 0; c_idx < mesh_instance->matrix.size(); c_idx++)
-						 stream << mesh_instance->matrix[c_idx] << " ";
+                     if (mesh_instance->matrix.size() == 16)
+                     {
+                         stream << mesh_instance->matrix[0] << " " << mesh_instance->matrix[4] << " " << mesh_instance->matrix[8] << " " << mesh_instance->matrix[12] << " ";
+                         stream << mesh_instance->matrix[1] << " " << mesh_instance->matrix[5] << " " << mesh_instance->matrix[9] << " " << mesh_instance->matrix[13] << " ";
+                         stream << mesh_instance->matrix[2] << " " << mesh_instance->matrix[6] << " " << mesh_instance->matrix[10] << " " << mesh_instance->matrix[14] << " ";
+                         stream << mesh_instance->matrix[3] << " " << mesh_instance->matrix[7] << " " << mesh_instance->matrix[11] << " " << mesh_instance->matrix[15] << " ";
+                     }
+					 //for (int c_idx = 0; c_idx < mesh_instance->matrix.size(); c_idx++)
+					//	 stream << mesh_instance->matrix[c_idx] << " ";
 					 stream << "]\n";
 				 }
 				 stream << "\tObjectInstance \"" << mesh_instance->mesh_name.c_str() << "\"\n";
