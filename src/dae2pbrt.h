@@ -64,6 +64,7 @@ namespace dae2pbrt
         void Reset();
         bool ImportFromXML(XMLNode* node_sub);
 
+		std::string instance_name;
         std::string mesh_name;
         std::string material_name;
 
@@ -83,8 +84,10 @@ namespace dae2pbrt
 
 		void ImportMeshes(XMLNode* node_lib);
         void ImportNodes(XMLNode* node_lib);
+		void ImportVisualScene(XMLNode* node_lib);
         void ExportPlyMeshes() const;
         void ExportPbrtScene() const;
+		bool DoesMeshExist(MeshInstance* instance) const;
 
         Options options;
         std::map<std::string, Mesh*> meshes;

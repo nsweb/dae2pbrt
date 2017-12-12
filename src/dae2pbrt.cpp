@@ -68,10 +68,18 @@ int main(int argc, char *argv[])
 	}
 
 	XMLNode* node_lib_geom = node_root->FirstChildElement("library_geometries");
-	program.ImportMeshes(node_lib_geom);
+	if (node_lib_geom)
+		program.ImportMeshes(node_lib_geom);
 
     XMLNode* node_lib_nodes = node_root->FirstChildElement("library_nodes");
-    program.ImportNodes(node_lib_nodes);
+	if (node_lib_nodes)
+		program.ImportNodes(node_lib_nodes);
+	else
+	{
+		XMLNode* node_lib_visual_scenes = node_root->FirstChildElement("library_visual_scenes");
+		if (node_lib_visual_scenes)
+			program.ImportVisualScene(node_lib_visual_scenes);
+	}
     
     program.ExportPlyMeshes();
     program.ExportPbrtScene();
@@ -211,12 +219,12 @@ bool Mesh::ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, co
 void Mesh::Repair()
 {
     // ensure that mesh is not degenerated
-    int num_points = position_stride ? positions.size() / position_stride : 0;
-    int position_size = num_points * position_stride;
+    size_t num_points = position_stride ? positions.size() / position_stride : 0;
+	size_t position_size = num_points * position_stride;
     positions.resize(position_size);
     
-    int num_normals = normal_stride ? normals.size() / normal_stride : 0;
-    int normal_size = num_normals * normal_stride;
+	size_t num_normals = normal_stride ? normals.size() / normal_stride : 0;
+	size_t normal_size = num_normals * normal_stride;
     normals.resize(normal_size);
     if (normal_stride && num_normals < num_points)
     {
@@ -224,9 +232,9 @@ void Mesh::Repair()
         normals.resize(num_points * normal_stride, 0.577350259f);
     }
     
-    int num_texcoords = texcoord_stride ? texcoords.size() / texcoord_stride : 0;
-    int texcoord_size = num_texcoords * texcoord_stride;
-    texcoords.resize(normal_size);
+	size_t num_texcoords = texcoord_stride ? texcoords.size() / texcoord_stride : 0;
+	size_t texcoord_size = num_texcoords * texcoord_stride;
+    texcoords.resize(texcoord_size);
     if (texcoord_stride && num_texcoords < num_points)
     {
         // warning: less texcoords than positions
@@ -240,8 +248,8 @@ void Mesh::ExportToPly(std::ofstream& stream) const
 {
     bool binary_data = false;
     
-    int num_points = position_stride ? positions.size() / position_stride : 0;
-    int num_faces = polycounts.size() ? polycounts.size() : polys.size() / 3;
+	size_t num_points = position_stride ? positions.size() / position_stride : 0;
+	size_t num_faces = polycounts.size() ? polycounts.size() : polys.size() / 3;
     
     stream << "ply\n";
     if(binary_data)
@@ -354,6 +362,8 @@ bool MeshInstance::ImportFromXML(XMLNode* node_sub)
             }
         }
     }
+
+	return true;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -450,7 +460,7 @@ void Program::ImportNodes(XMLNode* node_lib)
             const char* instance_id = node_sub->Attribute("id");
 
             MeshInstance* mesh_instance = new MeshInstance();
-            mesh_instance->mesh_name = instance_id;
+            mesh_instance->instance_name = instance_id;
             mesh_instance->ImportFromXML(node_sub);
             mesh_instances.push_back(mesh_instance);
             
@@ -504,6 +514,66 @@ void Program::ImportNodes(XMLNode* node_lib)
 #endif
 }
 
+void Program::ImportVisualScene(XMLNode* node_lib)
+{
+	XMLElement* node = node_lib->FirstChildElement("visual_scene");
+	if (node)
+	{
+		const char* id = node->Attribute("id");
+
+		// parse sub-nodes
+		XMLElement* node_sub = node->FirstChildElement("node");
+		while (node_sub)
+		{
+			const char* instance_id = node_sub->Attribute("id");
+
+			MeshInstance* mesh_instance = new MeshInstance();
+			mesh_instance->instance_name = instance_id;
+			mesh_instance->ImportFromXML(node_sub);
+			mesh_instances.push_back(mesh_instance);
+
+			node_sub = node_sub->NextSiblingElement("node");
+		}
+
+		node = node->NextSiblingElement("node");
+	}
+
+#if 0
+<library_visual_scenes>
+	<visual_scene id = "VisualSceneNode" name = "untitled">
+		<node id = "LOD3sp" name = "LOD3sp">
+			<rotate sid = "rotateZ">0 0 1 0< / rotate>
+			<rotate sid = "rotateY">0 1 0 0< / rotate>
+			<rotate sid = "rotateX">1 0 0 0< / rotate>
+			<instance_geometry url = "#LOD3spShape-lib">
+				<bind_material>
+					<technique_common>
+						<instance_material symbol = "blinn3SG" target = "#blinn3">
+							<bind_vertex_input semantic = "TEX0" input_semantic = "TEXCOORD" input_set = "0" / >
+						< / instance_material>
+					< / technique_common>
+				< / bind_material>
+			< / instance_geometry>
+		< / node>
+		<node id = "camera1" name = "camera1">
+			<translate sid = "translate">400.113 463.264 - 431.078< / translate>
+			<rotate sid = "rotateZ">0 0 1 0< / rotate>
+			<rotate sid = "rotateY">0 1 0 - 223.2< / rotate>
+			<rotate sid = "rotateX">1 0 0 - 38.4< / rotate>
+			<instance_camera url = "#cameraShape1" / >
+		< / node>
+		<node id = "directionalLight1" name = "directionalLight1">
+			<translate sid = "translate">148.654 183.672 - 292.179< / translate>
+			<rotate sid = "rotateZ">0 0 1 - 12.8709< / rotate>
+			<rotate sid = "rotateY">0 1 0 - 191.679< / rotate>
+			<rotate sid = "rotateX">1 0 0 - 45.6358< / rotate>
+			<instance_light url = "#directionalLightShape1-lib" / >
+		< / node>
+	< / visual_scene>
+< / library_visual_scenes>
+#endif
+}
+
 void Program::ExportPlyMeshes() const
 {
     std::string path, plyname;
@@ -553,20 +623,35 @@ void Program::ExportPbrtScene() const
         for (int mesh_idx = 0; mesh_idx < mesh_instances.size(); mesh_idx++)
         {
              MeshInstance* mesh_instance = mesh_instances[mesh_idx];
-             
-             stream << "\tTransformBegin\n";
-             stream << "\tTransform [";
-             for (int c_idx = 0; c_idx < mesh_instance->matrix.size(); c_idx++)
-                 stream << mesh_instance->matrix[c_idx] << " ";
-             stream << "]\n";
-             stream << "\tObjectInstance \"" << mesh_instance->mesh_name.c_str() << "\"\n";
-             stream << "\tTransformEnd\n";
+			 if (DoesMeshExist(mesh_instance))
+			 {
+				 stream << "\tTransformBegin\n";
+				 if (!mesh_instance->matrix.empty())
+				 {
+					 stream << "\tTransform [";
+					 for (int c_idx = 0; c_idx < mesh_instance->matrix.size(); c_idx++)
+						 stream << mesh_instance->matrix[c_idx] << " ";
+					 stream << "]\n";
+				 }
+				 stream << "\tObjectInstance \"" << mesh_instance->mesh_name.c_str() << "\"\n";
+				 stream << "\tTransformEnd\n";
+			 }
         }
         
         stream << "WorldEnd" << std::endl;
     }
 }
 
+bool Program::DoesMeshExist(MeshInstance* instance) const
+{
+	if (!instance)
+		return false;
+
+	std::map<std::string, Mesh*>::const_iterator it_mesh = meshes.find(instance->mesh_name);
+	return it_mesh != meshes.end();
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
 void Utils::ConvertStringToArray(const char* str, std::vector<int>& out_vector)
 {
 	const char* p = str;
@@ -607,7 +692,7 @@ XMLElement* Utils::FindNodeById(XMLNode* node_parent, const char* node_name, con
 
 void Utils::ExtractFilePath(const std::string& fullname, std::string& out_path)
 {
-    int delimiter_idx = fullname.rfind('/');
+    size_t delimiter_idx = fullname.rfind('/');
     if (std::string::npos == delimiter_idx)
         delimiter_idx = fullname.rfind('\\');
     
@@ -621,7 +706,7 @@ void Utils::ExtractFilePath(const std::string& fullname, std::string& out_path)
 
 void Utils::ExtractFilePath(const std::string& fullname, std::string& out_path, std::string& out_filename, std::string& out_extension)
 {
-    int delimiter_idx = fullname.rfind('/');
+	size_t delimiter_idx = fullname.rfind('/');
     if (std::string::npos == delimiter_idx)
         delimiter_idx = fullname.rfind('\\');
     
@@ -632,7 +717,7 @@ void Utils::ExtractFilePath(const std::string& fullname, std::string& out_path, 
     else
         out_path = "";
     
-    int ext_idx = fullname.rfind('.');
+	size_t ext_idx = fullname.rfind('.');
     if (std::string::npos != ext_idx && ext_idx > delimiter_idx)
     {
         out_filename = fullname.substr(delimiter_idx+1, ext_idx - delimiter_idx - 1);
