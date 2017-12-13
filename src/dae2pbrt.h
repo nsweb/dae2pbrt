@@ -30,6 +30,8 @@ namespace dae2pbrt
         bool ImportFromXML(XMLNode* node);
         
 		std::string name;
+		std::string fx_name;
+
         std::vector<float> diffuse;
         std::vector<float> specular;
         float shininess;
@@ -88,7 +90,7 @@ namespace dae2pbrt
 		Program();
 		~Program();
 
-        void ImportMaterials(XMLNode* node_lib_effect);
+        void ImportMaterials(XMLNode* node_lib_mat, XMLNode* node_lib_effect);
 		void ImportMeshes(XMLNode* node_lib);
         void ImportNodes(XMLNode* node_lib);
 		void ImportVisualScene(XMLNode* node_lib);

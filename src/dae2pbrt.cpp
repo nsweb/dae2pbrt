@@ -67,9 +67,10 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
-    XMLNode* node_lib_effect = node_root->FirstChildElement("library_effects");
-    if (node_lib_effect)
-        program.ImportMaterials(node_lib_effect);
+    XMLNode* node_lib_mat = node_root->FirstChildElement("library_materials");
+	XMLNode* node_lib_effect = node_root->FirstChildElement("library_effects");
+    if (node_lib_mat, node_lib_effect)
+        program.ImportMaterials(node_lib_mat, node_lib_effect);
     
 	XMLNode* node_lib_geom = node_root->FirstChildElement("library_geometries");
 	if (node_lib_geom)
@@ -108,40 +109,93 @@ void Material::Reset()
     specular.clear();
     shininess = 0.f;
 }
-bool Material::ImportFromXML(XMLNode* node_mat)
+bool Material::ImportFromXML(XMLNode* node_lib_effect)
 {
-    XMLElement* node = node_mat->FirstChildElement("diffuse");
-    if (node)
-    {
-        XMLElement* node_col = node->FirstChildElement("color");
-        if (node_col)
-        {
-            const char* idx_array = node_col->GetText();
-            Utils::ConvertStringToArray(idx_array, diffuse);
-        }
-    }
-    
-    node = node_mat->FirstChildElement("specular");
-    if (node)
-    {
-        XMLElement* node_col = node->FirstChildElement("color");
-        if (node_col)
-        {
-            const char* idx_array = node_col->GetText();
-            Utils::ConvertStringToArray(idx_array, specular);
-        }
-    }
-    
-    node = node_mat->FirstChildElement("shininess");
-    if (node)
-    {
-        XMLElement* node_col = node->FirstChildElement("float");
-        if (node_col)
-        {
-            shininess = node_col->FloatText();
-        }
-    }
+	XMLElement* node_effect = node_lib_effect->FirstChildElement("effect");
+	while (node_effect)
+	{
+		const char* id = node_effect->Attribute("id");
+		if (fx_name == id)
+		{
+			// we only manage common profile (no GLSL etc.)
+			XMLElement* node_profile = node_effect->FirstChildElement("profile_COMMON");
+			if (node_profile)
+			{
+				XMLElement* node_tech = node_profile->FirstChildElement("technique");
+				if (node_tech)
+				{
+					XMLElement* node_shading = node_tech->FirstChildElement();
+					if (node_shading)
+					{
+						std::string shading_name = node_shading->Name();
+						// we only manage phong and blinn (no constant, lambert etc.)
+						if (shading_name == "phong" || shading_name == "blinn")
+						{
+							XMLElement* node = node_shading->FirstChildElement("diffuse");
+							if (node)
+							{
+								XMLElement* node_col = node->FirstChildElement("color");
+								if (node_col)
+								{
+									const char* idx_array = node_col->GetText();
+									Utils::ConvertStringToArray(idx_array, diffuse);
+								}
+							}
+
+							node = node_shading->FirstChildElement("specular");
+							if (node)
+							{
+								XMLElement* node_col = node->FirstChildElement("color");
+								if (node_col)
+								{
+									const char* idx_array = node_col->GetText();
+									Utils::ConvertStringToArray(idx_array, specular);
+								}
+							}
+
+							node = node_shading->FirstChildElement("shininess");
+							if (node)
+							{
+								XMLElement* node_col = node->FirstChildElement("float");
+								if (node_col)
+								{
+									shininess = node_col->FloatText();
+								}
+							}
+						}
+					}
+				}
+			}
+
+			break;
+		}
+
+		node_effect = node_effect->NextSiblingElement("effect");
+	}
+
     return true;
+
+#if 0
+<library_effects>
+	<effect id = "Color-1-fx">
+		<profile_COMMON>
+			<technique sid = "common">
+				<phong>
+					<emission><color sid = "emission"> 0 0 0 1< / color>< / emission>
+					<ambient><color sid = "ambient"> 0 0 0 1< / color>< / ambient>
+					<diffuse><color sid = "diffuse"> 0.9921875 0.9921875 0.9921875 1 < / color>< / diffuse>
+					<specular><color sid = "specular"> 0.5 0.5 0.5 1 < / color>< / specular>
+					<shininess><float sid = "shininess"> 16 < / float>< / shininess>
+					<reflective><color sid = "reflective"> 0 0 0 1< / color>< / reflective>
+					<transparent><color sid = "transparent"> 0 0 0 1< / color>< / transparent>
+					<transparency><float sid = "transparency"> 1 < / float>< / transparency>
+					<index_of_refraction><float sid = "index_of_refraction"> 0 < / float>< / index_of_refraction>
+				< / phong>
+			< / technique>
+		< / profile_COMMON>
+	< / effect>
+< / library_effects>
+#endif
 }
 
 Mesh::Mesh()
@@ -439,52 +493,35 @@ Program::~Program()
     mesh_instances.clear();
 }
 
-void Program::ImportMaterials(XMLNode* node_lib)
+void Program::ImportMaterials(XMLNode* node_lib_mat, XMLNode* node_lib_effect)
 {
-    XMLElement* node_effect = node_lib->FirstChildElement("effect");
-    while (node_effect)
-    {
-        const char* id = node_effect->Attribute("id");
-        XMLElement* node_profile = node_effect->FirstChildElement("profile_COMMON");
-        if (node_profile)
-        {
-            XMLElement* node_tech = node_profile->FirstChildElement("technique");
-            if (node_tech)
-            {
-                XMLElement* node = node_tech->FirstChildElement();
-                if (node)
-                {
-                    Material* mat = new Material();
-                    mat->name = id;
-                    mat->ImportFromXML(node);
-                    materials[id] = mat;
-                }
-            }
-        }
-        
-        node_effect = node_effect->NextSiblingElement("effect");
-    }
+	// parse material lib, and look for a corresponding fx
+	XMLElement* node_mat = node_lib_mat->FirstChildElement("material");
+	while (node_mat)
+	{
+		const char* id = node_mat->Attribute("id");
+		Material* mat = new Material();
+		mat->name = id;
+		
+		XMLElement* node_inst = node_mat->FirstChildElement("instance_effect");
+		if (node_inst)
+		{
+			const char* url_name = node_inst->Attribute("url");
+			mat->fx_name = (url_name && url_name[0] == '#' ? url_name + 1 : url_name);
+			mat->ImportFromXML(node_lib_effect);
+		}
+		
+		materials[id] = mat;
+
+		node_mat = node_mat->NextSiblingElement("material");
+	}
     
 #if 0
-<library_effects>
-    <effect id ="Color-1-fx">
-        <profile_COMMON>
-            <technique sid="common">
-                <phong>
-                <emission><color sid="emission"> 0 0 0 1</color></emission>
-                <ambient><color sid="ambient"> 0 0 0 1</color></ambient>
-                <diffuse><color sid="diffuse"> 0.9921875 0.9921875 0.9921875 1 </color></diffuse>
-                <specular><color sid="specular"> 0.5 0.5 0.5 1 </color></specular>
-                <shininess><float sid="shininess"> 16 </float></shininess>
-                <reflective><color sid="reflective"> 0 0 0 1</color></reflective>
-                <transparent><color sid="transparent"> 0 0 0 1</color></transparent>
-                <transparency><float sid="transparency"> 1 </float></transparency>
-                <index_of_refraction><float sid="index_of_refraction"> 0 </float></index_of_refraction>
-                </phong>
-            </technique>
-        </profile_COMMON>
-    </effect>
-</library_effects>
+<library_materials>
+	<material id = "Color-1" name = "Color-1">
+		<instance_effect url = "#Color-1-fx" / >
+	< / material>
+< / library_materials>
 #endif
 }
 
