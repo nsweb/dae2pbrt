@@ -3,6 +3,7 @@
 
 #include "dae2pbrt.h"
 #include <iostream>
+#include <algorithm>
 
 using namespace dae2pbrt;
 
@@ -751,8 +752,33 @@ void Program::ExportPbrtScene() const
         std::ofstream& stream = pbrt;
         stream << "WorldBegin\n";
         
-        std::map<std::string, Mesh*>::const_iterator it_mesh;
-        for (it_mesh = meshes.begin(); it_mesh != meshes.end(); it_mesh++)
+        for (auto it_mat = materials.begin(); it_mat != materials.end(); it_mat++)
+        {
+            Material* mat = it_mat->second;
+            if (!mat->fx_name.empty())
+            {
+                stream << "\tMakeNamedMaterial \"" << mat->name.c_str() << "\" \"string type\" \"plastic\" ";
+                size_t diffuse_size = std::min((size_t)3, mat->diffuse.size());
+                if (diffuse_size)
+                {
+                    stream << "\"rgb Kd\" [ ";
+                    for (int c_idx = 0; c_idx < diffuse_size; c_idx++)
+                        stream << mat->diffuse[c_idx] << " ";
+                    stream << " ] ";;
+                }
+                size_t specular_size = std::min((size_t)3, mat->specular.size());
+                if (specular_size)
+                {
+                    stream << "\"rgb Ks\" [ ";
+                    for (int c_idx = 0; c_idx < specular_size; c_idx++)
+                        stream << mat->specular[c_idx] << " ";
+                    stream << " ] ";
+                }
+                stream << std::endl;
+            }
+        }
+        
+        for (auto it_mesh = meshes.begin(); it_mesh != meshes.end(); it_mesh++)
         {
             Mesh* mesh = it_mesh->second;
             
@@ -760,13 +786,14 @@ void Program::ExportPbrtScene() const
             stream << "\tShape \"plymesh\" \"string filename\" \"" << mesh->name.c_str() << ".ply" << "\"\n";
             stream << "\tObjectEnd\n";
         }
-        //MakeNamedMaterial "BlackDiffuse" "string type" [ "matte" ] "rgb Kd" [ 0.000273 0.000273 0.000273 ]
         
-        for (int mesh_idx = 0; mesh_idx < mesh_instances.size(); mesh_idx++)
+        for (MeshInstance* mesh_instance : mesh_instances)
         {
-             MeshInstance* mesh_instance = mesh_instances[mesh_idx];
 			 if (DoesMeshExist(mesh_instance))
 			 {
+                 if (!mesh_instance->material_name.empty())
+                     stream << "\tNamedMaterial \"" << mesh_instance->material_name.c_str() << "\"\n";
+                 
 				 stream << "\tTransformBegin\n";
 				 if (!mesh_instance->matrix.empty())
 				 {
@@ -796,7 +823,7 @@ bool Program::DoesMeshExist(MeshInstance* instance) const
 	if (!instance)
 		return false;
 
-	std::map<std::string, Mesh*>::const_iterator it_mesh = meshes.find(instance->mesh_name);
+    const auto it_mesh = meshes.find(instance->mesh_name);
 	return it_mesh != meshes.end();
 }
 
