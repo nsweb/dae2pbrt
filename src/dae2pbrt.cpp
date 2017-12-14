@@ -4,6 +4,7 @@
 #include "dae2pbrt.h"
 #include <iostream>
 #include <algorithm>
+#include <set>
 
 using namespace dae2pbrt;
 
@@ -752,47 +753,66 @@ void Program::ExportPbrtScene() const
         std::ofstream& stream = pbrt;
         stream << "WorldBegin\n";
         
-        for (auto it_mat = materials.begin(); it_mat != materials.end(); it_mat++)
+        // pbrt does not support instancing with different materials, so we need to create a specific object for each different combination of mesh + material
+        std::set<std::string> unique_mm;
+        std::string mm_name;
+        for (MeshInstance* mesh_instance : mesh_instances)
         {
-            Material* mat = it_mat->second;
-            if (!mat->fx_name.empty())
+            if (DoesMeshExist(mesh_instance))
             {
-                stream << "\tMakeNamedMaterial \"" << mat->name.c_str() << "\" \"string type\" \"plastic\" ";
-                size_t diffuse_size = std::min((size_t)3, mat->diffuse.size());
-                if (diffuse_size)
+                mm_name = mesh_instance->mesh_name;
+                if (!mesh_instance->material_name.empty())
+                    mm_name += "_" + mesh_instance->material_name;
+                
+                if (unique_mm.find(mm_name) == unique_mm.end())
                 {
-                    stream << "\"rgb Kd\" [ ";
-                    for (int c_idx = 0; c_idx < diffuse_size; c_idx++)
-                        stream << mat->diffuse[c_idx] << " ";
-                    stream << " ] ";;
+                    stream << "\tObjectBegin \"" << mm_name.c_str() << "\"\n";
+                    
+                    auto it_mat = materials.find(mesh_instance->material_name);
+                    if (it_mat != materials.end())
+                    {
+                        Material* mat = it_mat->second;
+                        if (mat && !mat->fx_name.empty())
+                        {
+                            stream << "\tMaterial \"plastic\" ";
+                            size_t diffuse_size = std::min((size_t)3, mat->diffuse.size());
+                            if (diffuse_size)
+                            {
+                                stream << "\"rgb Kd\" [ ";
+                                for (int c_idx = 0; c_idx < diffuse_size; c_idx++)
+                                    stream << mat->diffuse[c_idx] << " ";
+                                stream << " ] ";;
+                            }
+                            size_t specular_size = std::min((size_t)3, mat->specular.size());
+                            if (specular_size)
+                            {
+                                stream << "\"rgb Ks\" [ ";
+                                for (int c_idx = 0; c_idx < specular_size; c_idx++)
+                                    stream << mat->specular[c_idx] << " ";
+                                stream << " ] ";
+                            }
+                            stream << std::endl;
+                        }
+                    }
+                    
+                    stream << "\tShape \"plymesh\" \"string filename\" \"" << mesh_instance->mesh_name.c_str() << ".ply" << "\"\n";
+                    stream << "\tObjectEnd\n";
+                    
+                    unique_mm.insert(mm_name);
                 }
-                size_t specular_size = std::min((size_t)3, mat->specular.size());
-                if (specular_size)
-                {
-                    stream << "\"rgb Ks\" [ ";
-                    for (int c_idx = 0; c_idx < specular_size; c_idx++)
-                        stream << mat->specular[c_idx] << " ";
-                    stream << " ] ";
-                }
-                stream << std::endl;
             }
-        }
-        
-        for (auto it_mesh = meshes.begin(); it_mesh != meshes.end(); it_mesh++)
-        {
-            Mesh* mesh = it_mesh->second;
-            
-            stream << "\tObjectBegin \"" << mesh->name.c_str() << "\"\n";
-            stream << "\tShape \"plymesh\" \"string filename\" \"" << mesh->name.c_str() << ".ply" << "\"\n";
-            stream << "\tObjectEnd\n";
         }
         
         for (MeshInstance* mesh_instance : mesh_instances)
         {
 			 if (DoesMeshExist(mesh_instance))
 			 {
+                 //if (!mesh_instance->material_name.empty())
+                 //    stream << "\tNamedMaterial \"" << mesh_instance->material_name.c_str() << "\"\n";
+                 
+                 mm_name = mesh_instance->mesh_name;
                  if (!mesh_instance->material_name.empty())
-                     stream << "\tNamedMaterial \"" << mesh_instance->material_name.c_str() << "\"\n";
+                     mm_name += "_" + mesh_instance->material_name;
                  
 				 stream << "\tTransformBegin\n";
 				 if (!mesh_instance->matrix.empty())
@@ -805,11 +825,9 @@ void Program::ExportPbrtScene() const
                          stream << mesh_instance->matrix[2] << " " << mesh_instance->matrix[6] << " " << mesh_instance->matrix[10] << " " << mesh_instance->matrix[14] << " ";
                          stream << mesh_instance->matrix[3] << " " << mesh_instance->matrix[7] << " " << mesh_instance->matrix[11] << " " << mesh_instance->matrix[15] << " ";
                      }
-					 //for (int c_idx = 0; c_idx < mesh_instance->matrix.size(); c_idx++)
-					//	 stream << mesh_instance->matrix[c_idx] << " ";
 					 stream << "]\n";
 				 }
-				 stream << "\tObjectInstance \"" << mesh_instance->mesh_name.c_str() << "\"\n";
+				 stream << "\tObjectInstance \"" << mm_name		.c_str() << "\"\n";
 				 stream << "\tTransformEnd\n";
 			 }
         }
