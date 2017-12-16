@@ -78,16 +78,8 @@ int main(int argc, char *argv[])
 	if (node_lib_geom)
 		program.ImportMeshes(node_lib_geom);
 
-    XMLNode* node_lib_nodes = node_root->FirstChildElement("library_nodes");
-	if (node_lib_nodes)
-		program.ImportNodes(node_lib_nodes);
-	else
-	{
-		XMLNode* node_lib_visual_scenes = node_root->FirstChildElement("library_visual_scenes");
-		if (node_lib_visual_scenes)
-			program.ImportVisualScene(node_lib_visual_scenes);
-	}
-    
+	program.ImportSceneNodes(node_root);
+
     program.ExportPlyMeshes();
     program.ExportPbrtScene();
         
@@ -129,7 +121,7 @@ bool Material::ImportFromXML(XMLNode* node_lib_effect)
 					XMLElement* node_shading = node_tech->FirstChildElement();
 					if (node_shading)
 					{
-						std::string shading_name = node_shading->Name();
+						string shading_name = node_shading->Name();
 						// we only manage phong and blinn (no constant, lambert etc.)
 						if (shading_name == "phong" || shading_name == "blinn")
 						{
@@ -272,7 +264,7 @@ bool Mesh::ImportVertices(XMLNode* node_mesh, XMLNode* node_poly)
 		if (source && semantic)
 		{
 			const char* source_id = (source[0] == '#' ? source + 1 : source);
-			if (0 == std::strcmp(semantic, "VERTEX"))
+			if (0 == strcmp(semantic, "VERTEX"))
 			{
 				// find vertices
 				XMLElement* node_vertices = Utils::FindNodeById(node_mesh, "vertices", source_id);
@@ -281,7 +273,7 @@ bool Mesh::ImportVertices(XMLNode* node_mesh, XMLNode* node_poly)
 					XMLElement* node_input_pos = node_vertices->FirstChildElement("input");
 					const char* semantic_pos = node_input_pos->Attribute("semantic");
 					const char* source_pos = node_input_pos->Attribute("source");
-					if (source_pos && 0 == std::strcmp(semantic_pos, "POSITION"))
+					if (source_pos && 0 == strcmp(semantic_pos, "POSITION"))
 					{
 						source_id = (source_pos[0] == '#' ? source_pos + 1 : source_pos);
 
@@ -290,12 +282,12 @@ bool Mesh::ImportVertices(XMLNode* node_mesh, XMLNode* node_poly)
 					}
 				}
 			}
-			else if (0 == std::strcmp(semantic, "NORMAL"))
+			else if (0 == strcmp(semantic, "NORMAL"))
 			{
                 normal_stride = 3;
 				ExtractSourceFloatArray(node_mesh, source_id, 3, normals);
 			}
-			else if (0 == std::strcmp(semantic, "TEXCOORD"))
+			else if (0 == strcmp(semantic, "TEXCOORD"))
 			{
                 texcoord_stride = 2;
 				ExtractSourceFloatArray(node_mesh, source_id, 2, texcoords);
@@ -308,7 +300,7 @@ bool Mesh::ImportVertices(XMLNode* node_mesh, XMLNode* node_poly)
 	return true;
 }
 
-bool Mesh::ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, const int stride, std::vector<float>& dst_array)
+bool Mesh::ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, const int stride, vector<float>& dst_array)
 {
 	XMLElement* node_source = Utils::FindNodeById(node_mesh, "source", source_id);
 	if (node_source)
@@ -355,7 +347,7 @@ void Mesh::Repair()
     // check for degenerate face (only triangles)
 }
 
-void Mesh::ExportToPly(std::ofstream& stream) const
+void Mesh::ExportToPly(ofstream& stream) const
 {
     bool binary_data = false;
     
@@ -368,10 +360,10 @@ void Mesh::ExportToPly(std::ofstream& stream) const
     else
         stream << "format ascii 1.0\n";
     
-    stream << "comment " << name.c_str() << std::endl;
+    stream << "comment " << name.c_str() << endl;
     stream << "comment exported from dae2pbrt\n";
     
-    stream << "element vertex " << num_points << std::endl;
+    stream << "element vertex " << num_points << endl;
     
     stream << "property float x\n";
     stream << "property float y\n";
@@ -384,7 +376,7 @@ void Mesh::ExportToPly(std::ofstream& stream) const
         stream << "property float nz\n";
     }
     
-    stream << "element face " << num_faces << std::endl;
+    stream << "element face " << num_faces << endl;
     
     stream << "property list uchar int vertex_indices\n";
     stream << "end_header\n";
@@ -401,7 +393,7 @@ void Mesh::ExportToPly(std::ofstream& stream) const
                 stream << positions[position_stride*p_idx + c_idx] << " ";
             for (int c_idx = 0; c_idx < normal_stride; ++c_idx)
                 stream << normals[normal_stride*p_idx + c_idx] << " ";
-            stream << std::endl;
+            stream << endl;
         }
         
         if (polycounts.size())
@@ -415,35 +407,35 @@ void Mesh::ExportToPly(std::ofstream& stream) const
                 for (int v_idx = 0; v_idx < poly_size; ++v_idx, ++v_offset)
                     stream << polys[v_offset] << " ";
                 
-                stream << std::endl;
+                stream << endl;
             }
         }
         else
         {
             for (int face_idx = 0; face_idx < num_faces; ++face_idx)
             {
-                stream << "3 " << polys[3*face_idx] << " " << polys[3*face_idx + 1] << " " << polys[3*face_idx + 2] << std::endl;
+                stream << "3 " << polys[3*face_idx] << " " << polys[3*face_idx + 1] << " " << polys[3*face_idx + 2] << endl;
             }
         }
     }
 }
 
 ////////////////////////////////////////////////////////////////////////
-MeshInstance::MeshInstance()
+SceneNode::SceneNode()
 {
     Reset();
 }
-MeshInstance::~MeshInstance()
+SceneNode::~SceneNode()
 {
     
 }
 
-void MeshInstance::Reset()
+void SceneNode::Reset()
 {
     matrix.clear();
 }
 
-bool MeshInstance::ImportFromXML(XMLNode* node_sub)
+bool SceneNode::ImportFromXML(XMLNode* node_sub)
 {
     XMLElement* node_mat = node_sub->FirstChildElement("matrix");
     if (node_mat)
@@ -474,6 +466,14 @@ bool MeshInstance::ImportFromXML(XMLNode* node_sub)
         }
     }
 
+	node_inst = node_sub->FirstChildElement("instance_node");
+	if (node_inst)
+	{
+		const char* url_name = node_inst->Attribute("url");
+		string inst_name = (url_name && url_name[0] == '#' ? url_name + 1 : url_name);
+		child_nodes.push_back(inst_name);
+	}
+
 	return true;
 }
 
@@ -484,15 +484,9 @@ Program::Program()
 }
 Program::~Program()
 {
-    std::map<std::string, Mesh*>::iterator it_mesh;
-	for (it_mesh = meshes.begin(); it_mesh != meshes.end(); it_mesh++)
-		delete it_mesh->second;
-    
-    for (int mesh_idx = 0; mesh_idx < mesh_instances.size(); mesh_idx++)
-        delete mesh_instances[mesh_idx];
-	
+	materials.clear();
 	meshes.clear();
-    mesh_instances.clear();
+	scene_nodes.clear();
 }
 
 void Program::ImportMaterials(XMLNode* node_lib_mat, XMLNode* node_lib_effect)
@@ -502,7 +496,7 @@ void Program::ImportMaterials(XMLNode* node_lib_mat, XMLNode* node_lib_effect)
 	while (node_mat)
 	{
 		const char* id = node_mat->Attribute("id");
-		Material* mat = new Material();
+		shared_ptr<Material> mat( new Material() );
 		mat->name = id;
 		
 		XMLElement* node_inst = node_mat->FirstChildElement("instance_effect");
@@ -538,7 +532,7 @@ void Program::ImportMeshes(XMLNode* node_lib)
 		XMLElement* node_mesh = node_geom->FirstChildElement("mesh");
 		if (node_mesh)
 		{
-            Mesh* mesh = new Mesh();
+            shared_ptr<Mesh> mesh( new Mesh() );
             mesh->name = id;
 			mesh->ImportFromXML(node_mesh);
             mesh->Repair();
@@ -589,26 +583,59 @@ void Program::ImportMeshes(XMLNode* node_lib)
 #endif
 }
 
-void Program::ImportNodes(XMLNode* node_lib)
+void Program::ImportSceneNodes(XMLNode* node_root)
 {
-    XMLElement* node = node_lib->FirstChildElement("node");
+	XMLNode* node_scene = node_root->FirstChildElement("scene");
+	if (node_scene)
+	{
+		XMLElement* node_inst_visual_scene = node_scene->FirstChildElement("instance_visual_scene");
+		if (node_inst_visual_scene)
+		{
+			const char* url_name = node_inst_visual_scene->Attribute("url");
+			string visual_scene_id = (url_name && url_name[0] == '#' ? url_name + 1 : url_name);
+
+			XMLNode* node_lib_visual_scenes = node_root->FirstChildElement("library_visual_scenes");
+			if (node_lib_visual_scenes)
+			{
+				XMLElement* node_visual_scene = node_lib_visual_scenes->FirstChildElement("visual_scene");
+				while (node_visual_scene)
+				{
+					const char* id = node_visual_scene->Attribute("id");
+					if (visual_scene_id == id)
+					{
+						ImportSubNodes(node_visual_scene);
+						break;
+					}
+					node_visual_scene = node_lib_visual_scenes->NextSiblingElement("visual_scene");
+				}
+			}
+		}
+	}
+
+	XMLNode* node_lib_nodes = node_root->FirstChildElement("library_nodes");
+	if (node_lib_nodes)
+	{
+		ImportSubNodes(node_lib_nodes);
+	}
+}
+
+void Program::ImportSubNodes(XMLNode* node_parent, SceneNode* parent)
+{
+    XMLElement* node = node_parent->FirstChildElement("node");
     while (node)
     {
-        const char* id = node->Attribute("id");
-        
-        // parse sub-nodes
-        XMLElement* node_sub = node->FirstChildElement("node");
-        while (node_sub)
-        {
-            const char* instance_id = node_sub->Attribute("id");
+        const char* node_id = node->Attribute("id");
 
-            MeshInstance* mesh_instance = new MeshInstance();
-            mesh_instance->instance_name = instance_id;
-            mesh_instance->ImportFromXML(node_sub);
-            mesh_instances.push_back(mesh_instance);
-            
-            node_sub = node_sub->NextSiblingElement("node");
-        }
+		shared_ptr<SceneNode> scene_node(new SceneNode());
+		scene_node->node_name = node_id;
+		scene_node->ImportFromXML(node);
+		scene_nodes[node_id] = scene_node;
+
+		// register as sub-node of parent
+		if (parent)
+			parent->child_nodes.push_back(parent->node_name);
+
+		ImportSubNodes(node, scene_node.get());
         
         node = node->NextSiblingElement("node");
     }
@@ -657,125 +684,65 @@ void Program::ImportNodes(XMLNode* node_lib)
 #endif
 }
 
-void Program::ImportVisualScene(XMLNode* node_lib)
-{
-	XMLElement* node = node_lib->FirstChildElement("visual_scene");
-	if (node)
-	{
-		const char* id = node->Attribute("id");
-
-		// parse sub-nodes
-		XMLElement* node_sub = node->FirstChildElement("node");
-		while (node_sub)
-		{
-			const char* instance_id = node_sub->Attribute("id");
-
-			MeshInstance* mesh_instance = new MeshInstance();
-			mesh_instance->instance_name = instance_id;
-			mesh_instance->ImportFromXML(node_sub);
-			mesh_instances.push_back(mesh_instance);
-
-			node_sub = node_sub->NextSiblingElement("node");
-		}
-
-		node = node->NextSiblingElement("node");
-	}
-
-#if 0
-<library_visual_scenes>
-	<visual_scene id = "VisualSceneNode" name = "untitled">
-		<node id = "LOD3sp" name = "LOD3sp">
-			<rotate sid = "rotateZ">0 0 1 0< / rotate>
-			<rotate sid = "rotateY">0 1 0 0< / rotate>
-			<rotate sid = "rotateX">1 0 0 0< / rotate>
-			<instance_geometry url = "#LOD3spShape-lib">
-				<bind_material>
-					<technique_common>
-						<instance_material symbol = "blinn3SG" target = "#blinn3">
-							<bind_vertex_input semantic = "TEX0" input_semantic = "TEXCOORD" input_set = "0" / >
-						< / instance_material>
-					< / technique_common>
-				< / bind_material>
-			< / instance_geometry>
-		< / node>
-		<node id = "camera1" name = "camera1">
-			<translate sid = "translate">400.113 463.264 - 431.078< / translate>
-			<rotate sid = "rotateZ">0 0 1 0< / rotate>
-			<rotate sid = "rotateY">0 1 0 - 223.2< / rotate>
-			<rotate sid = "rotateX">1 0 0 - 38.4< / rotate>
-			<instance_camera url = "#cameraShape1" / >
-		< / node>
-		<node id = "directionalLight1" name = "directionalLight1">
-			<translate sid = "translate">148.654 183.672 - 292.179< / translate>
-			<rotate sid = "rotateZ">0 0 1 - 12.8709< / rotate>
-			<rotate sid = "rotateY">0 1 0 - 191.679< / rotate>
-			<rotate sid = "rotateX">1 0 0 - 45.6358< / rotate>
-			<instance_light url = "#directionalLightShape1-lib" / >
-		< / node>
-	< / visual_scene>
-< / library_visual_scenes>
-#endif
-}
-
 void Program::ExportPlyMeshes() const
 {
-    std::string path, plyname;
+    string path, plyname;
     Utils::ExtractFilePath(options.filename, path);
     
-    std::map<std::string, Mesh*>::const_iterator it_mesh;
-    for (it_mesh = meshes.begin(); it_mesh != meshes.end(); it_mesh++)
+    for (auto it_mesh = meshes.begin(); it_mesh != meshes.end(); ++it_mesh)
     {
-        Mesh* mesh = it_mesh->second;
-        std::ofstream ply;
+        shared_ptr<Mesh> mesh = it_mesh->second;
+        ofstream ply;
         plyname = path + mesh->name + ".ply";
-        ply.open(plyname, std::ios::out | std::ios::binary);
+        ply.open(plyname, ios::out | ios::binary);
         
         if (ply.is_open())
             mesh->ExportToPly(ply);
         else
         {
-            //std::cerr << "open failed: " << strerror(errno) << '\n';
+            //cerr << "open failed: " << strerror(errno) << '\n';
         }
     }
 }
 
 void Program::ExportPbrtScene() const
 {
-    std::string path, filename, extname, pbrtname;
+    string path, filename, extname, pbrtname;
     Utils::ExtractFilePath(options.filename, path, filename, extname);
     
-    std::ofstream pbrt;
+    ofstream pbrt;
     pbrtname = path + filename + ".pbrt";
-    pbrt.open(pbrtname, std::ios::out | std::ios::binary);
+    pbrt.open(pbrtname, ios::out | ios::binary);
     
     if (pbrt.is_open())
     {
-        std::ofstream& stream = pbrt;
+        ofstream& stream = pbrt;
         stream << "WorldBegin\n";
         
         // pbrt does not support instancing with different materials, so we need to create a specific object for each different combination of mesh + material
-        std::set<std::string> unique_mm;
-        std::string mm_name;
-        for (MeshInstance* mesh_instance : mesh_instances)
+        set<string> unique_mm;
+        string mm_name;
+		for (auto it_node = scene_nodes.begin(); it_node != scene_nodes.end(); ++it_node)
         {
-            if (DoesMeshExist(mesh_instance))
+			shared_ptr<SceneNode> scene_node = it_node->second;
+            if (DoesMeshExist(scene_node.get()))
             {
-                mm_name = mesh_instance->mesh_name;
-                if (!mesh_instance->material_name.empty())
-                    mm_name += "_" + mesh_instance->material_name;
+                mm_name = scene_node->mesh_name;
+                if (!scene_node->material_name.empty())
+                    mm_name += "_" + scene_node->material_name;
                 
                 if (unique_mm.find(mm_name) == unique_mm.end())
                 {
                     stream << "\tObjectBegin \"" << mm_name.c_str() << "\"\n";
                     
-                    auto it_mat = materials.find(mesh_instance->material_name);
+                    auto it_mat = materials.find(scene_node->material_name);
                     if (it_mat != materials.end())
                     {
-                        Material* mat = it_mat->second;
-                        if (mat && !mat->fx_name.empty())
+						shared_ptr<Material> const& mat = it_mat->second;
+                        if (mat.get() && !mat->fx_name.empty())
                         {
                             stream << "\tMaterial \"plastic\" ";
-                            size_t diffuse_size = std::min((size_t)3, mat->diffuse.size());
+                            size_t diffuse_size = min((size_t)3, mat->diffuse.size());
                             if (diffuse_size)
                             {
                                 stream << "\"rgb Kd\" [ ";
@@ -783,7 +750,7 @@ void Program::ExportPbrtScene() const
                                     stream << mat->diffuse[c_idx] << " ";
                                 stream << " ] ";;
                             }
-                            size_t specular_size = std::min((size_t)3, mat->specular.size());
+                            size_t specular_size = min((size_t)3, mat->specular.size());
                             if (specular_size)
                             {
                                 stream << "\"rgb Ks\" [ ";
@@ -791,11 +758,11 @@ void Program::ExportPbrtScene() const
                                     stream << mat->specular[c_idx] << " ";
                                 stream << " ] ";
                             }
-                            stream << std::endl;
+                            stream << endl;
                         }
                     }
                     
-                    stream << "\tShape \"plymesh\" \"string filename\" \"" << mesh_instance->mesh_name.c_str() << ".ply" << "\"\n";
+                    stream << "\tShape \"plymesh\" \"string filename\" \"" << scene_node->mesh_name.c_str() << ".ply" << "\"\n";
                     stream << "\tObjectEnd\n";
                     
                     unique_mm.insert(mm_name);
@@ -803,65 +770,66 @@ void Program::ExportPbrtScene() const
             }
         }
         
-        for (MeshInstance* mesh_instance : mesh_instances)
-        {
-			 if (DoesMeshExist(mesh_instance))
-			 {
+		for (auto it_node = scene_nodes.begin(); it_node != scene_nodes.end(); ++it_node)
+		{
+			shared_ptr<SceneNode> scene_node = it_node->second;
+			if (DoesMeshExist(scene_node.get()))
+			{
                  //if (!mesh_instance->material_name.empty())
                  //    stream << "\tNamedMaterial \"" << mesh_instance->material_name.c_str() << "\"\n";
                  
-                 mm_name = mesh_instance->mesh_name;
-                 if (!mesh_instance->material_name.empty())
-                     mm_name += "_" + mesh_instance->material_name;
+                 mm_name = scene_node->mesh_name;
+                 if (!scene_node->material_name.empty())
+                     mm_name += "_" + scene_node->material_name;
                  
 				 stream << "\tTransformBegin\n";
-				 if (!mesh_instance->matrix.empty())
+				 if (!scene_node->matrix.empty())
 				 {
 					 stream << "\tTransform [";
-                     if (mesh_instance->matrix.size() == 16)
+                     if (scene_node->matrix.size() == 16)
                      {
-                         stream << mesh_instance->matrix[0] << " " << mesh_instance->matrix[4] << " " << mesh_instance->matrix[8] << " " << mesh_instance->matrix[12] << " ";
-                         stream << mesh_instance->matrix[1] << " " << mesh_instance->matrix[5] << " " << mesh_instance->matrix[9] << " " << mesh_instance->matrix[13] << " ";
-                         stream << mesh_instance->matrix[2] << " " << mesh_instance->matrix[6] << " " << mesh_instance->matrix[10] << " " << mesh_instance->matrix[14] << " ";
-                         stream << mesh_instance->matrix[3] << " " << mesh_instance->matrix[7] << " " << mesh_instance->matrix[11] << " " << mesh_instance->matrix[15] << " ";
+                         stream << scene_node->matrix[0] << " " << scene_node->matrix[4] << " " << scene_node->matrix[8] << " " << scene_node->matrix[12] << " ";
+                         stream << scene_node->matrix[1] << " " << scene_node->matrix[5] << " " << scene_node->matrix[9] << " " << scene_node->matrix[13] << " ";
+                         stream << scene_node->matrix[2] << " " << scene_node->matrix[6] << " " << scene_node->matrix[10] << " " << scene_node->matrix[14] << " ";
+                         stream << scene_node->matrix[3] << " " << scene_node->matrix[7] << " " << scene_node->matrix[11] << " " << scene_node->matrix[15] << " ";
                      }
 					 stream << "]\n";
 				 }
-				 stream << "\tObjectInstance \"" << mm_name		.c_str() << "\"\n";
+				 stream << "\tObjectInstance \"" << mm_name.c_str() << "\"\n";
 				 stream << "\tTransformEnd\n";
-			 }
+			}
         }
         
-        stream << "WorldEnd" << std::endl;
+        stream << "WorldEnd" << endl;
     }
 }
 
-bool Program::DoesMeshExist(MeshInstance* instance) const
+bool Program::DoesMeshExist(SceneNode* scene_node) const
 {
-	if (!instance)
+	if (!scene_node || scene_node->mesh_name.empty())
 		return false;
 
-    const auto it_mesh = meshes.find(instance->mesh_name);
+    const auto it_mesh = meshes.find(scene_node->mesh_name);
 	return it_mesh != meshes.end();
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
-void Utils::ConvertStringToArray(const char* str, std::vector<int>& out_vector)
+void Utils::ConvertStringToArray(const char* str, vector<int>& out_vector)
 {
 	const char* p = str;
 	char* end = nullptr;
-	for (int i = std::strtol(p, &end, 10); p != end; i = std::strtol(p, &end, 10))
+	for (int i = strtol(p, &end, 10); p != end; i = strtol(p, &end, 10))
 	{
 		p = end;
 		out_vector.push_back(i);
 	}
 }
 
-void Utils::ConvertStringToArray(const char* str, std::vector<float>& out_vector)
+void Utils::ConvertStringToArray(const char* str, vector<float>& out_vector)
 {
 	const char* p = str;
 	char* end = nullptr;
-	for (float t = std::strtof(p, &end); p != end; t = std::strtof(p, &end))
+	for (float t = strtof(p, &end); p != end; t = strtof(p, &end))
 	{
 		p = end;
 		out_vector.push_back(t);
@@ -874,7 +842,7 @@ XMLElement* Utils::FindNodeById(XMLNode* node_parent, const char* node_name, con
 	while (node)
 	{
 		const char* str_id = node->Attribute("id");
-		if (0 == std::strcmp(str_id, node_id))
+		if (0 == strcmp(str_id, node_id))
 		{
 			return node;
 		}
@@ -884,13 +852,13 @@ XMLElement* Utils::FindNodeById(XMLNode* node_parent, const char* node_name, con
 	return nullptr;
 }
 
-void Utils::ExtractFilePath(const std::string& fullname, std::string& out_path)
+void Utils::ExtractFilePath(const string& fullname, string& out_path)
 {
     size_t delimiter_idx = fullname.rfind('/');
-    if (std::string::npos == delimiter_idx)
+    if (string::npos == delimiter_idx)
         delimiter_idx = fullname.rfind('\\');
     
-    if (std::string::npos != delimiter_idx)
+    if (string::npos != delimiter_idx)
     {
         out_path = fullname.substr(0, delimiter_idx+1);
     }
@@ -898,13 +866,13 @@ void Utils::ExtractFilePath(const std::string& fullname, std::string& out_path)
         out_path = "";
 }
 
-void Utils::ExtractFilePath(const std::string& fullname, std::string& out_path, std::string& out_filename, std::string& out_extension)
+void Utils::ExtractFilePath(const string& fullname, string& out_path, string& out_filename, string& out_extension)
 {
 	size_t delimiter_idx = fullname.rfind('/');
-    if (std::string::npos == delimiter_idx)
+    if (string::npos == delimiter_idx)
         delimiter_idx = fullname.rfind('\\');
     
-    if (std::string::npos != delimiter_idx)
+    if (string::npos != delimiter_idx)
     {
         out_path = fullname.substr(0, delimiter_idx+1);
     }
@@ -912,7 +880,7 @@ void Utils::ExtractFilePath(const std::string& fullname, std::string& out_path, 
         out_path = "";
     
 	size_t ext_idx = fullname.rfind('.');
-    if (std::string::npos != ext_idx && ext_idx > delimiter_idx)
+    if (string::npos != ext_idx && ext_idx > delimiter_idx)
     {
         out_filename = fullname.substr(delimiter_idx+1, ext_idx - delimiter_idx - 1);
         out_extension = fullname.substr(ext_idx+1);

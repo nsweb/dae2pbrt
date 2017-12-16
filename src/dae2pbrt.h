@@ -5,19 +5,21 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <memory>
 #include <fstream>
 
+using namespace std;
 using namespace tinyxml2;
 
 namespace dae2pbrt
 {
 	namespace Utils
 	{
-		static void ConvertStringToArray(const char* str, std::vector<int>& out_vector);
-		static void ConvertStringToArray(const char* str, std::vector<float>& out_vector);
+		static void ConvertStringToArray(const char* str, vector<int>& out_vector);
+		static void ConvertStringToArray(const char* str, vector<float>& out_vector);
 		static XMLElement* FindNodeById(XMLNode* node_parent, const char* node_name, const char* node_id);
-        static void ExtractFilePath(const std::string& fullname, std::string& out_path);
-        static void ExtractFilePath(const std::string& fullname, std::string& out_path, std::string& out_filename, std::string& out_extension);
+        static void ExtractFilePath(const string& fullname, string& out_path);
+        static void ExtractFilePath(const string& fullname, string& out_path, string& out_filename, string& out_extension);
 	};
 
 	class Material
@@ -29,11 +31,11 @@ namespace dae2pbrt
         void Reset();
         bool ImportFromXML(XMLNode* node);
         
-		std::string name;
-		std::string fx_name;
+		string name;
+		string fx_name;
 
-        std::vector<float> diffuse;
-        std::vector<float> specular;
+        vector<float> diffuse;
+        vector<float> specular;
         float shininess;
 	};
 
@@ -46,42 +48,44 @@ namespace dae2pbrt
         void Reset();
 		bool ImportFromXML(XMLNode* node_mesh);
 		bool ImportVertices(XMLNode* node_poly, XMLNode* node_mesh);
-		bool ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, const int stride, std::vector<float>& dst_array);
-        void ExportToPly(std::ofstream& stream) const;
+		bool ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, const int stride, vector<float>& dst_array);
+        void ExportToPly(ofstream& stream) const;
         void Repair();
 
-		std::string name;
+		string name;
 
         int position_stride;
         int normal_stride;
         int texcoord_stride;
-		std::vector<float> positions;
-		std::vector<float> normals;
-		std::vector<float> texcoords;
+		vector<float> positions;
+		vector<float> normals;
+		vector<float> texcoords;
 
-		std::vector<int> polycounts;
-		std::vector<int> polys;
+		vector<int> polycounts;
+		vector<int> polys;
 	};
     
-    class MeshInstance
+    class SceneNode
     {
     public:
-        MeshInstance();
-        ~MeshInstance();
+		SceneNode();
+        ~SceneNode();
         
         void Reset();
         bool ImportFromXML(XMLNode* node_sub);
 
-		std::string instance_name;
-        std::string mesh_name;
-        std::string material_name;
+		string node_name;
 
-        std::vector<float> matrix;
+        string mesh_name;
+        string material_name;
+        vector<float> matrix;
+
+		vector<string> child_nodes;
     };
 
 	struct Options
 	{
-		std::string filename;
+		string filename;
 	};
 
 	class Program
@@ -92,16 +96,17 @@ namespace dae2pbrt
 
         void ImportMaterials(XMLNode* node_lib_mat, XMLNode* node_lib_effect);
 		void ImportMeshes(XMLNode* node_lib);
-        void ImportNodes(XMLNode* node_lib);
-		void ImportVisualScene(XMLNode* node_lib);
+		void ImportSceneNodes(XMLNode* node_root);
+        void ImportSubNodes(XMLNode* node_parent, SceneNode* parent = nullptr);
+		//void ImportVisualScene(XMLNode* node_lib);
         void ExportPlyMeshes() const;
         void ExportPbrtScene() const;
-		bool DoesMeshExist(MeshInstance* instance) const;
+		bool DoesMeshExist(SceneNode* scene_node) const;
 
         Options options;
-        std::map<std::string, Material*> materials;
-        std::map<std::string, Mesh*> meshes;
-        std::vector<MeshInstance*> mesh_instances;
+        map<string, shared_ptr<Material> > materials;
+        map<string, shared_ptr<Mesh> > meshes;
+		map<string, shared_ptr<SceneNode> > scene_nodes;
 	};
 
 };
