@@ -71,7 +71,7 @@ int main(int argc, char *argv[])
 
     XMLNode* node_lib_mat = node_root->FirstChildElement("library_materials");
 	XMLNode* node_lib_effect = node_root->FirstChildElement("library_effects");
-    if (node_lib_mat, node_lib_effect)
+    if (node_lib_mat && node_lib_effect)
         program.ImportMaterials(node_lib_mat, node_lib_effect);
     
 	XMLNode* node_lib_geom = node_root->FirstChildElement("library_geometries");
@@ -603,7 +603,7 @@ void Program::ImportSceneNodes(XMLNode* node_root)
 					const char* id = node_visual_scene->Attribute("id");
 					if (visual_scene_id == id)
 					{
-						ImportSubNodes(node_visual_scene);
+						ImportSubNodes(node_visual_scene, true);
 						break;
 					}
 					node_visual_scene = node_lib_visual_scenes->NextSiblingElement("visual_scene");
@@ -619,7 +619,7 @@ void Program::ImportSceneNodes(XMLNode* node_root)
 	}
 }
 
-void Program::ImportSubNodes(XMLNode* node_parent, SceneNode* parent)
+void Program::ImportSubNodes(XMLNode* node_parent, bool visual_node, SceneNode* parent)
 {
     XMLElement* node = node_parent->FirstChildElement("node");
     while (node)
@@ -627,15 +627,16 @@ void Program::ImportSubNodes(XMLNode* node_parent, SceneNode* parent)
         const char* node_id = node->Attribute("id");
 
 		shared_ptr<SceneNode> scene_node(new SceneNode());
+        scene_node->visual_node = visual_node;
 		scene_node->node_name = node_id;
 		scene_node->ImportFromXML(node);
 		scene_nodes[node_id] = scene_node;
 
 		// register as sub-node of parent
 		if (parent)
-			parent->child_nodes.push_back(parent->node_name);
+			parent->child_nodes.push_back(scene_node->node_name);
 
-		ImportSubNodes(node, scene_node.get());
+        ImportSubNodes(node, false, scene_node.get());
         
         node = node->NextSiblingElement("node");
     }
@@ -717,7 +718,9 @@ void Program::ExportPbrtScene() const
     if (pbrt.is_open())
     {
         ofstream& stream = pbrt;
+        stream << "Include \"RenderIncl.pbrt\"\n\n";
         stream << "WorldBegin\n";
+        stream << "\tInclude \"WorldIncl.pbrt\"\n";
         
         // pbrt does not support instancing with different materials, so we need to create a specific object for each different combination of mesh + material
         set<string> unique_mm;
@@ -770,38 +773,70 @@ void Program::ExportPbrtScene() const
             }
         }
         
+        stream << "\n";
+        
+        // export scene recursively, starting from visual nodes
 		for (auto it_node = scene_nodes.begin(); it_node != scene_nodes.end(); ++it_node)
 		{
-			shared_ptr<SceneNode> scene_node = it_node->second;
-			if (DoesMeshExist(scene_node.get()))
-			{
-                 //if (!mesh_instance->material_name.empty())
-                 //    stream << "\tNamedMaterial \"" << mesh_instance->material_name.c_str() << "\"\n";
-                 
-                 mm_name = scene_node->mesh_name;
-                 if (!scene_node->material_name.empty())
-                     mm_name += "_" + scene_node->material_name;
-                 
-				 stream << "\tTransformBegin\n";
-				 if (!scene_node->matrix.empty())
-				 {
-					 stream << "\tTransform [";
-                     if (scene_node->matrix.size() == 16)
-                     {
-                         stream << scene_node->matrix[0] << " " << scene_node->matrix[4] << " " << scene_node->matrix[8] << " " << scene_node->matrix[12] << " ";
-                         stream << scene_node->matrix[1] << " " << scene_node->matrix[5] << " " << scene_node->matrix[9] << " " << scene_node->matrix[13] << " ";
-                         stream << scene_node->matrix[2] << " " << scene_node->matrix[6] << " " << scene_node->matrix[10] << " " << scene_node->matrix[14] << " ";
-                         stream << scene_node->matrix[3] << " " << scene_node->matrix[7] << " " << scene_node->matrix[11] << " " << scene_node->matrix[15] << " ";
-                     }
-					 stream << "]\n";
-				 }
-				 stream << "\tObjectInstance \"" << mm_name.c_str() << "\"\n";
-				 stream << "\tTransformEnd\n";
-			}
+			shared_ptr<SceneNode> const& scene_node = it_node->second;
+            if (scene_node->visual_node)
+            {
+                ExportPbrtNode(stream, scene_node.get(), 1);
+            }
         }
         
         stream << "WorldEnd" << endl;
     }
+}
+
+void Program::ExportPbrtNode(ofstream& stream, SceneNode* scene_node, int indent_level) const
+{
+    if (!scene_node)
+        return;
+    
+    string indent("");
+    for (int indent_idx = 0; indent_idx < indent_level; indent_idx++)
+        indent += "\t";
+    
+    bool has_transform = (scene_node->matrix.size() == 16);
+    if (has_transform)
+    {
+        stream << indent.c_str() << "TransformBegin\n";
+        stream << indent.c_str() << "ConcatTransform [";
+        stream << scene_node->matrix[0] << " " << scene_node->matrix[4] << " " << scene_node->matrix[8] << " " << scene_node->matrix[12] << " ";
+        stream << scene_node->matrix[1] << " " << scene_node->matrix[5] << " " << scene_node->matrix[9] << " " << scene_node->matrix[13] << " ";
+        stream << scene_node->matrix[2] << " " << scene_node->matrix[6] << " " << scene_node->matrix[10] << " " << scene_node->matrix[14] << " ";
+        stream << scene_node->matrix[3] << " " << scene_node->matrix[7] << " " << scene_node->matrix[11] << " " << scene_node->matrix[15] << " ";
+        stream << "]\n";
+    }
+    
+    if (DoesMeshExist(scene_node))
+    {
+        //if (!mesh_instance->material_name.empty())
+        //    stream << "\tNamedMaterial \"" << mesh_instance->material_name.c_str() << "\"\n";
+        
+        string mm_name = scene_node->mesh_name;
+        if (!scene_node->material_name.empty())
+            mm_name += "_" + scene_node->material_name;
+        
+        stream << indent.c_str() << "ObjectInstance \"" << mm_name.c_str() << "\"\n";
+    }
+    else if (has_transform)
+    {
+        stream << indent.c_str() << "# " << scene_node->node_name.c_str() << endl;
+    }
+    
+    for (const string& child_name : scene_node->child_nodes)
+    {
+        auto it_node = scene_nodes.find(child_name);
+        if (it_node != scene_nodes.end())
+        {
+            ExportPbrtNode(stream, it_node->second.get(), indent_level+1);
+        }
+    }
+    
+    if (has_transform)
+        stream << indent.c_str() << "TransformEnd\n";
 }
 
 bool Program::DoesMeshExist(SceneNode* scene_node) const

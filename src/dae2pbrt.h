@@ -74,8 +74,8 @@ namespace dae2pbrt
         void Reset();
         bool ImportFromXML(XMLNode* node_sub);
 
+        bool visual_node;
 		string node_name;
-
         string mesh_name;
         string material_name;
         vector<float> matrix;
@@ -97,10 +97,11 @@ namespace dae2pbrt
         void ImportMaterials(XMLNode* node_lib_mat, XMLNode* node_lib_effect);
 		void ImportMeshes(XMLNode* node_lib);
 		void ImportSceneNodes(XMLNode* node_root);
-        void ImportSubNodes(XMLNode* node_parent, SceneNode* parent = nullptr);
+        void ImportSubNodes(XMLNode* node_parent, bool visual_node = false, SceneNode* parent = nullptr);
 		//void ImportVisualScene(XMLNode* node_lib);
         void ExportPlyMeshes() const;
         void ExportPbrtScene() const;
+        void ExportPbrtNode(ofstream& stream, SceneNode* scene_node, int indent_level) const;
 		bool DoesMeshExist(SceneNode* scene_node) const;
 
         Options options;
