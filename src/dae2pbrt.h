@@ -22,6 +22,17 @@ namespace dae2pbrt
         static void ExtractFilePath(const string& fullname, string& out_path, string& out_filename, string& out_extension);
 	};
 
+	struct EPbrtMaterial
+	{
+		enum Type
+		{
+			Matte = 0,
+			Plastic,
+			Disney,
+			Max,
+		};
+	};
+
 	class Material
 	{
 	public:
@@ -46,7 +57,7 @@ namespace dae2pbrt
 		~Mesh();
 
         void Reset();
-		bool ImportFromXML(XMLNode* node_mesh);
+		bool ImportFromXML(XMLNode* node_mesh, bool skip_vertices);
 		bool ImportVertices(XMLNode* node_poly, XMLNode* node_mesh);
 		bool ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, const int stride, vector<float>& dst_array);
         void ExportToPly(ofstream& stream) const;
@@ -85,7 +96,15 @@ namespace dae2pbrt
 
 	struct Options
 	{
-		string filename;
+		/** Name of the DAE to import */
+		string filename = "";
+		/** Default material used when exporting the pbrt file */
+		string default_material = "matte";
+		/** Default material converted to enum */
+		EPbrtMaterial::Type material_type = (EPbrtMaterial::Type)0;
+		/** Whether to import/export mesh geometry */
+		bool skip_mesh = false;
+		
 	};
 
 	class Program

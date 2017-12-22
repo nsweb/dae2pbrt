@@ -31,31 +31,46 @@ int main(int argc, char *argv[])
          options.imageFile = argv[++i];
          } else if (!strncmp(argv[i], "--outfile=", 10)) {
          options.imageFile = &argv[i][10];
-         } else if (!strcmp(argv[i], "--quick") || !strcmp(argv[i], "-quick")) {
-         options.quickRender = true;
-         } else if (!strcmp(argv[i], "--quiet") || !strcmp(argv[i], "-quiet")) {
-         options.quiet = true;
-         } else if (!strcmp(argv[i], "--cat") || !strcmp(argv[i], "-cat")) {
-         options.cat = true;
-         } else if (!strcmp(argv[i], "--toply") || !strcmp(argv[i], "-toply")) {
-         options.toPly = true;
-         } else if (!strcmp(argv[i], "--v") || !strcmp(argv[i], "-v")) {
-         if (i + 1 == argc)
-         usage("missing value after --v argument");
-         FLAGS_v = atoi(argv[++i]);
-         } else if (!strncmp(argv[i], "--v=", 4)) {
-         FLAGS_v = atoi(argv[i] + 4);
-         }
-         else if (!strcmp(argv[i], "--logtostderr")) {
-         FLAGS_logtostderr = true;
          } else*/
-        if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||
+		if (!strcmp(argv[i], "--material") || !strcmp(argv[i], "-material")) {
+			if (i + 1 == argc)
+				Usage("missing value after --material argument");
+			program.options.default_material = argv[++i];
+		}
+		else if (!strcmp(argv[i], "--skipmesh") || !strcmp(argv[i], "-skipmesh")) {
+			program.options.skip_mesh = true;
+			/*
+		 } else if (!strcmp(argv[i], "--quiet") || !strcmp(argv[i], "-quiet")) {
+		 options.quiet = true;
+		 } else if (!strcmp(argv[i], "--cat") || !strcmp(argv[i], "-cat")) {
+		 options.cat = true;
+		 } else if (!strcmp(argv[i], "--toply") || !strcmp(argv[i], "-toply")) {
+		 options.toPly = true;
+		 } else if (!strcmp(argv[i], "--v") || !strcmp(argv[i], "-v")) {
+		 if (i + 1 == argc)
+		 usage("missing value after --v argument");
+		 FLAGS_v = atoi(argv[++i]);
+		 } else if (!strncmp(argv[i], "--v=", 4)) {
+		 FLAGS_v = atoi(argv[i] + 4);
+		 }
+		 else if (!strcmp(argv[i], "--logtostderr")) {
+		 FLAGS_logtostderr = true;
+		 } else*/
+		}
+		else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||
             !strcmp(argv[i], "-h")) {
             Usage();
             return 0;
         } else
             program.options.filename = argv[i];
     }
+
+	if (program.options.default_material == "matte")
+		program.options.material_type = EPbrtMaterial::Matte;
+	else if (program.options.default_material == "plastic")
+		program.options.material_type = EPbrtMaterial::Plastic;
+	else if (program.options.default_material == "disney")
+		program.options.material_type = EPbrtMaterial::Disney;
 
     XMLDocument doc;
 	XMLError result = doc.LoadFile( program.options.filename.c_str() );
@@ -213,7 +228,7 @@ void Mesh::Reset()
     polys.clear();
 }
 
-bool Mesh::ImportFromXML(XMLNode* node_mesh)
+bool Mesh::ImportFromXML(XMLNode* node_mesh, bool skip_vertices)
 {
     Reset();
     
@@ -223,7 +238,7 @@ bool Mesh::ImportFromXML(XMLNode* node_mesh)
 	{
 		int tri_count = node_tri->IntAttribute("count", 0);
 		XMLElement* node_tri_idx = node_tri->FirstChildElement("p");
-		if (node_tri_idx)
+		if (!skip_vertices && node_tri_idx)
 		{
 			const char* idx_array = node_tri_idx->GetText();
 			Utils::ConvertStringToArray(idx_array, polys);
@@ -239,7 +254,7 @@ bool Mesh::ImportFromXML(XMLNode* node_mesh)
 			int poly_count = node_poly->IntAttribute("count", 0);
 			XMLElement* node_poly_vcount = node_poly->FirstChildElement("vcount");
 			XMLElement* node_poly_idx = node_poly->FirstChildElement("p");
-			if (node_poly_vcount && node_poly_idx)
+			if (!skip_vertices && node_poly_vcount && node_poly_idx)
 			{
 				const char* vcount_array = node_poly_vcount->GetText();
 				const char* idx_array = node_poly_idx->GetText();
@@ -534,7 +549,7 @@ void Program::ImportMeshes(XMLNode* node_lib)
 		{
             shared_ptr<Mesh> mesh( new Mesh() );
             mesh->name = id;
-			mesh->ImportFromXML(node_mesh);
+			mesh->ImportFromXML(node_mesh, options.skip_mesh);
             mesh->Repair();
 			meshes[id] = mesh;
 		}
@@ -687,6 +702,9 @@ void Program::ImportSubNodes(XMLNode* node_parent, bool visual_node, SceneNode* 
 
 void Program::ExportPlyMeshes() const
 {
+	if (options.skip_mesh)
+		return;
+
     string path, plyname;
     Utils::ExtractFilePath(options.filename, path);
     
@@ -744,23 +762,33 @@ void Program::ExportPbrtScene() const
 						shared_ptr<Material> const& mat = it_mat->second;
                         if (mat.get() && !mat->fx_name.empty())
                         {
-                            stream << "\tMaterial \"plastic\" ";
+                            stream << "\tMaterial \"" << options.default_material << "\" ";
                             size_t diffuse_size = min((size_t)3, mat->diffuse.size());
                             if (diffuse_size)
                             {
-                                stream << "\"rgb Kd\" [ ";
+								if (options.material_type == EPbrtMaterial::Disney)
+									stream << "\"rgb color\" [ ";
+								else
+									stream << "\"rgb Kd\" [ ";
                                 for (int c_idx = 0; c_idx < diffuse_size; c_idx++)
                                     stream << mat->diffuse[c_idx] << " ";
                                 stream << " ] ";;
                             }
-                            size_t specular_size = min((size_t)3, mat->specular.size());
-                            if (specular_size)
-                            {
-                                stream << "\"rgb Ks\" [ ";
-                                for (int c_idx = 0; c_idx < specular_size; c_idx++)
-                                    stream << mat->specular[c_idx] << " ";
-                                stream << " ] ";
-                            }
+							if (options.material_type != EPbrtMaterial::Disney)
+							{
+								size_t specular_size = min((size_t)3, mat->specular.size());
+								if (specular_size)
+								{
+									stream << "\"rgb Ks\" [ ";
+									for (int c_idx = 0; c_idx < specular_size; c_idx++)
+										stream << mat->specular[c_idx] << " ";
+									stream << " ] ";
+								}
+							}
+							else
+							{
+								stream << "\"float roughness\" [0.5] ";// \"rgb scatterdistance\" [0.01 0.01 0.01] ";
+							}
                             stream << endl;
                         }
                     }
