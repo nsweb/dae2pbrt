@@ -1,4 +1,26 @@
 /*
+ MIT License
+ 
+ This file is part of dae2pbrt
+ Copyright (c) 2017-2018 Nicolas Sérouart
+ 
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ 
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+ 
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
 */
 
 #include "dae2pbrt.h"
@@ -183,28 +205,6 @@ bool Material::ImportFromXML(XMLNode* node_lib_effect)
 	}
 
     return true;
-
-#if 0
-<library_effects>
-	<effect id = "Color-1-fx">
-		<profile_COMMON>
-			<technique sid = "common">
-				<phong>
-					<emission><color sid = "emission"> 0 0 0 1< / color>< / emission>
-					<ambient><color sid = "ambient"> 0 0 0 1< / color>< / ambient>
-					<diffuse><color sid = "diffuse"> 0.9921875 0.9921875 0.9921875 1 < / color>< / diffuse>
-					<specular><color sid = "specular"> 0.5 0.5 0.5 1 < / color>< / specular>
-					<shininess><float sid = "shininess"> 16 < / float>< / shininess>
-					<reflective><color sid = "reflective"> 0 0 0 1< / color>< / reflective>
-					<transparent><color sid = "transparent"> 0 0 0 1< / color>< / transparent>
-					<transparency><float sid = "transparency"> 1 < / float>< / transparency>
-					<index_of_refraction><float sid = "index_of_refraction"> 0 < / float>< / index_of_refraction>
-				< / phong>
-			< / technique>
-		< / profile_COMMON>
-	< / effect>
-< / library_effects>
-#endif
 }
 
 Mesh::Mesh()
@@ -526,14 +526,6 @@ void Program::ImportMaterials(XMLNode* node_lib_mat, XMLNode* node_lib_effect)
 
 		node_mat = node_mat->NextSiblingElement("material");
 	}
-    
-#if 0
-<library_materials>
-	<material id = "Color-1" name = "Color-1">
-		<instance_effect url = "#Color-1-fx" / >
-	< / material>
-< / library_materials>
-#endif
 }
 
 void Program::ImportMeshes(XMLNode* node_lib)
@@ -556,46 +548,6 @@ void Program::ImportMeshes(XMLNode* node_lib)
 
 		node_geom = node_geom->NextSiblingElement("geometry");
 	}
-    
-    
-#if 0
-<library_geometries>
-    <geometry id="3004.dat" name="3004.dat">
-        <mesh>
-            <source id="3004.dat-pos" name="3004.dat-pos">
-                <float_array id="3004.dat-pos-array" count="1449">
-                    -20 0 -10 -20 0 -10 -20 0 -10 -20 0 10 -20 0 10 -20 0 10 -20 24 -10 -20 24 -10 -20 24 -10 -20 24 10 -20 24 10 -20 24 10 -16 -4 0 -16 -4 0 -16 0 0 -16 4 -6
-                </float_array>
-                <technique_common>
-                    <accessor count="483" source="#3004.dat-pos-array" stride="3">
-                        <param name="X" type="float" /><param name="Y" type="float" /><param name="Z" type="float" />
-                    </accessor>
-                </technique_common>
-            </source>
-            <source id="3004.dat-norm" name="3004.dat-norm">
-                <float_array id="3004.dat-norm-array" count="1449">
-                    0 0 -1 -1 0 0 0 -1 0 0 -1 0 -1 0 0 0 0 1 0 1 0 0 0 -1 -1 0 0 0 0 1 -1 0 0 0 1 0 0 -1 0 -0.9997588 0 -0.02196128 -0.9997588 0 0.02196128 0 1 0 0 0 1 1 0 0 1
-                </float_array>
-                <technique_common>
-                    <accessor count="483" source="#3004.dat-norm-array" stride="3">
-                        <param name="X" type="float" /><param name="Y" type="float" /><param name="Z" type="float" />
-                    </accessor>
-                </technique_common>
-            </source>
-            <vertices id="3004.dat-vert">
-                <input semantic="POSITION" source="#3004.dat-pos" />
-            </vertices>
-            <triangles count="460" material="Base">
-                <input semantic="VERTEX" source="#3004.dat-vert" offset="0" />
-                <input semantic="NORMAL" source="#3004.dat-norm" offset="0" />
-                <p>
-                242 307 316 242 301 307 242 296 301 242 290 296 242 284 290 242 278 284 242 271 278 242 266 271 242 260 266 242 253 260 242 247 253 242 240 247 242 235 240
-                </p>
-            </triangles>
-        </mesh>
-    </geometry>
-</library_geometries>
-#endif
 }
 
 void Program::ImportSceneNodes(XMLNode* node_root)
@@ -655,49 +607,6 @@ void Program::ImportSubNodes(XMLNode* node_parent, bool visual_node, SceneNode* 
         
         node = node->NextSiblingElement("node");
     }
-    
-#if 0
-<library_nodes>
-    <node id="Node-UntitledModel.io">
-        <node id="Inner-Node-UntitledModel.io-0">
-            <matrix>1.00000    0.00000    0.00000    0.00000
-                0.00000    1.00000    0.00000    -24.00000
-                0.00000    0.00000    1.00000    -10.00000
-                0.00000    0.00000    0.00000    1.00000
-            </matrix>
-            <matrix>0.99375 0 0 0
-                    0 0.9910714 0 0.08928572
-                    0 0 0.9875 0
-                    0 0 0 1</matrix>
-            <instance_geometry url="#3004.dat">
-                <bind_material>
-                    <technique_common>
-                        <instance_material symbol="Base" target="#Color-1"/>
-                    </technique_common>
-                </bind_material>
-            </instance_geometry>
-        </node>
-        <node id="Inner-Node-UntitledModel.io-1">
-            <matrix>1.00000    0.00000    0.00000    60.00000
-                0.00000    1.00000    0.00000    -24.00000
-                0.00000    0.00000    1.00000    -10.00000
-                0.00000    0.00000    0.00000    1.00000
-            </matrix>
-            <matrix>0.99375 0 0 0
-                    0 0.9910714 0 0.08928572
-                    0 0 0.9875 0
-                    0 0 0 1</matrix>
-            <instance_geometry url="#3004.dat">
-                <bind_material>
-                    <technique_common>
-                        <instance_material symbol="Base" target="#Color-5"/>
-                    </technique_common>
-                </bind_material>
-            </instance_geometry>
-        </node>
-    </node>
-</library_nodes>
-#endif
 }
 
 void Program::ExportPlyMeshes() const
