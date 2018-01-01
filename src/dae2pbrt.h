@@ -27,6 +27,8 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <set>
+#include <tuple>
 #include <memory>
 #include <fstream>
 
@@ -40,6 +42,7 @@ namespace dae2pbrt
 		static void ConvertStringToArray(const char* str, vector<int>& out_vector);
 		static void ConvertStringToArray(const char* str, vector<float>& out_vector);
 		static XMLElement* FindNodeById(XMLNode* node_parent, const char* node_name, const char* node_id);
+        static XMLElement* FindNodeBySid(XMLNode* node_parent, const char* node_name, const char* node_id);
         static void ExtractFilePath(const string& fullname, string& out_path);
         static void ExtractFilePath(const string& fullname, string& out_path, string& out_filename, string& out_extension);
 	};
@@ -51,66 +54,75 @@ namespace dae2pbrt
 			Matte = 0,
 			Plastic,
 			Disney,
+            Uber,
 			Max,
 		};
 	};
+    
+    struct Texture
+    {
+        string name = "";
+        string path_name = "";
+    };
 
-	class Material
+	struct Material
 	{
-	public:
-		Material();
-		~Material();
-
-        void Reset();
+        struct SourceColor
+        {
+            vector<float> col;
+            string tex_name = "";
+            
+            bool ImportFromXML(XMLNode* node_source, XMLElement* node_profile);
+            void ExportPbrt(ofstream& stream, const char* field, EPbrtMaterial::Type material_type);
+        };
+        
         bool ImportFromXML(XMLNode* node);
         
-		string name;
-		string fx_name;
+		string name = "";
+		string fx_name = "";
 
-        vector<float> diffuse;
-        vector<float> specular;
-        float shininess;
+        SourceColor diffuse;
+        SourceColor specular;
+        float shininess = 0.f;
+        float transparency = 1.f;
 	};
 
-	class Mesh
+	struct Mesh
 	{
-	public:
-		Mesh();
-		~Mesh();
-
-        void Reset();
 		bool ImportFromXML(XMLNode* node_mesh, bool skip_vertices);
 		bool ImportVertices(XMLNode* node_poly, XMLNode* node_mesh);
 		bool ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, const int stride, vector<float>& dst_array);
-        void ExportToPly(ofstream& stream) const;
+        void ExportToPly(ofstream& stream, bool binary_encoding) const;
+        void BuildVertices();
         void Repair();
 
-		string name;
+		string name = "";
 
-        int position_stride;
-        int normal_stride;
-        int texcoord_stride;
+        int position_stride = 0;
+        int position_offset = 0;
+        int normal_stride = 0;
+        int normal_offset = 0;
+        int texcoord_stride = 0;
+        int texcoord_offset = 0;
+        int max_offset = 0;
 		vector<float> positions;
 		vector<float> normals;
 		vector<float> texcoords;
 
 		vector<int> polycounts;
 		vector<int> polys;
+        map<tuple<int, int, int>, int> vertices;
+        bool all_triangles = false;
 	};
     
-    class SceneNode
+    struct SceneNode
     {
-    public:
-		SceneNode();
-        ~SceneNode();
-        
-        void Reset();
         bool ImportFromXML(XMLNode* node_sub);
 
-        bool visual_node;
-		string node_name;
-        string mesh_name;
-        string material_name;
+        bool visual_node = false;
+		string node_name = "";
+        string mesh_name = "";
+        string material_name = "";
         vector<float> matrix;
 
 		vector<string> child_nodes;
@@ -126,6 +138,10 @@ namespace dae2pbrt
 		EPbrtMaterial::Type material_type = (EPbrtMaterial::Type)0;
 		/** Whether to import/export mesh geometry */
 		bool skip_mesh = false;
+        /** Whether to use ascii for ply encoding */
+        bool ply_ascii = false;
+        /** Whether to log message other than errors */
+        bool quiet = false;
 		
 	};
 
@@ -135,6 +151,7 @@ namespace dae2pbrt
 		Program();
 		~Program();
 
+        void ImportTextures(XMLNode* node_lib);
         void ImportMaterials(XMLNode* node_lib_mat, XMLNode* node_lib_effect);
 		void ImportMeshes(XMLNode* node_lib);
 		void ImportSceneNodes(XMLNode* node_root);
@@ -145,6 +162,7 @@ namespace dae2pbrt
 		bool DoesMeshExist(SceneNode* scene_node) const;
 
         Options options;
+        map<string, shared_ptr<Texture> > textures;
         map<string, shared_ptr<Material> > materials;
         map<string, shared_ptr<Mesh> > meshes;
 		map<string, shared_ptr<SceneNode> > scene_nodes;

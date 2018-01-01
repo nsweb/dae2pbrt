@@ -26,13 +26,22 @@
 #include "dae2pbrt.h"
 #include <iostream>
 #include <algorithm>
-#include <set>
+
 
 using namespace dae2pbrt;
 
 void Usage(const char* error = nullptr)
 {
+    if (error)
+        cerr << "dae2pbrt: " << error << "\n\n";
     
+    cerr << "usage: dae2pbrt <filename.dae> [<options>]\n";
+    cerr << "Options:\n";
+    cerr << "--help                 Print this help text.\n";
+    cerr << "--material <materail>  Use one of the following material for pbrt : matte, plastic, disney, uber.\n";
+    cerr << "--skipmesh             Do not export PLY meshes.\n";
+    cerr << "--plyascii             Use ASCII encoding when exporting PLY meshes.\n";
+    cerr << "--quiet                Suppress all text output other than error messages.\n";
 }
 
 // main program
@@ -42,18 +51,10 @@ int main(int argc, char *argv[])
 		return 0;
     
     Program program;
-    
+
     // Process command-line arguments
     for (int i = 1; i < argc; ++i)
     {
-        /*
-         if (!strcmp(argv[i], "--outfile") || !strcmp(argv[i], "-outfile")) {
-         if (i + 1 == argc)
-         usage("missing value after --outfile argument");
-         options.imageFile = argv[++i];
-         } else if (!strncmp(argv[i], "--outfile=", 10)) {
-         options.imageFile = &argv[i][10];
-         } else*/
 		if (!strcmp(argv[i], "--material") || !strcmp(argv[i], "-material")) {
 			if (i + 1 == argc)
 				Usage("missing value after --material argument");
@@ -61,23 +62,12 @@ int main(int argc, char *argv[])
 		}
 		else if (!strcmp(argv[i], "--skipmesh") || !strcmp(argv[i], "-skipmesh")) {
 			program.options.skip_mesh = true;
-			/*
-		 } else if (!strcmp(argv[i], "--quiet") || !strcmp(argv[i], "-quiet")) {
-		 options.quiet = true;
-		 } else if (!strcmp(argv[i], "--cat") || !strcmp(argv[i], "-cat")) {
-		 options.cat = true;
-		 } else if (!strcmp(argv[i], "--toply") || !strcmp(argv[i], "-toply")) {
-		 options.toPly = true;
-		 } else if (!strcmp(argv[i], "--v") || !strcmp(argv[i], "-v")) {
-		 if (i + 1 == argc)
-		 usage("missing value after --v argument");
-		 FLAGS_v = atoi(argv[++i]);
-		 } else if (!strncmp(argv[i], "--v=", 4)) {
-		 FLAGS_v = atoi(argv[i] + 4);
-		 }
-		 else if (!strcmp(argv[i], "--logtostderr")) {
-		 FLAGS_logtostderr = true;
-		 } else*/
+        }
+        else if (!strcmp(argv[i], "--plyascii") || !strcmp(argv[i], "-plyascii")) {
+            program.options.ply_ascii = true;
+        }
+        else if (!strcmp(argv[i], "--quiet") || !strcmp(argv[i], "-quiet")) {
+            program.options.quiet = true;
 		}
 		else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||
             !strcmp(argv[i], "-h")) {
@@ -93,19 +83,29 @@ int main(int argc, char *argv[])
 		program.options.material_type = EPbrtMaterial::Plastic;
 	else if (program.options.default_material == "disney")
 		program.options.material_type = EPbrtMaterial::Disney;
+    else if (program.options.default_material == "uber")
+        program.options.material_type = EPbrtMaterial::Uber;
 
     XMLDocument doc;
 	XMLError result = doc.LoadFile( program.options.filename.c_str() );
 	if (result != XML_SUCCESS)
-		return 0;
+    {
+        cerr << "Error: could not load file <" << program.options.filename.c_str() << ">\n";
+		return -1;
+    }
 
 	XMLNode* node_root = doc.FirstChildElement("COLLADA");
 	if (!node_root)
 	{
 		// no node to process
-		return 0;
+        cerr << "Error: did not find any COLLADA node to process\n";
+		return -1;
 	}
 
+    XMLNode* node_lib_tex = node_root->FirstChildElement("library_images");
+    if (node_lib_tex)
+        program.ImportTextures(node_lib_tex);
+    
     XMLNode* node_lib_mat = node_root->FirstChildElement("library_materials");
 	XMLNode* node_lib_effect = node_root->FirstChildElement("library_effects");
     if (node_lib_mat && node_lib_effect)
@@ -123,23 +123,86 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-
 ////////////////////////////////////////////////////////////////////////
-Material::Material()
+bool Material::SourceColor::ImportFromXML(XMLNode* node_source, XMLElement* node_profile)
 {
-    Reset();
-}
-Material::~Material()
-{
+    XMLElement* node_col = node_source->FirstChildElement("color");
+    if (node_col)
+    {
+        const char* idx_array = node_col->GetText();
+        Utils::ConvertStringToArray(idx_array, col);
+    }
+    else
+    {
+        XMLElement* node_tex = node_source->FirstChildElement("texture");
+        if (node_tex)
+        {
+            const char* texture_sampler = node_tex->Attribute("texture");
+            const char* texcoord = node_tex->Attribute("texcoord");
+            if (texture_sampler)
+            {
+                XMLElement* node_samp = Utils::FindNodeBySid(node_profile, "newparam", texture_sampler);
+                if (node_samp)
+                {
+                    XMLElement* node_samp2D = node_samp->FirstChildElement("sampler2D");
+                    if (node_samp2D)
+                    {
+                        XMLElement* node_source = node_samp2D->FirstChildElement("source");
+                        if (node_source)
+                        {
+                            const char* surface_name = node_source->GetText();
+                            if (surface_name)
+                            {
+                                XMLElement* node_surf = Utils::FindNodeBySid(node_profile, "newparam", surface_name);
+                                if (node_surf)
+                                {
+                                    XMLElement* node_surf2D = node_surf->FirstChildElement("surface");
+                                    if (node_surf2D)
+                                    {
+                                        XMLElement* node_init = node_surf2D->FirstChildElement("init_from");
+                                        if (node_init)
+                                        {
+                                            tex_name = node_init->GetText();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     
+    return true;
 }
 
-void Material::Reset()
+void Material::SourceColor::ExportPbrt(ofstream& stream, const char* field, EPbrtMaterial::Type material_type)
 {
-    diffuse.clear();
-    specular.clear();
-    shininess = 0.f;
+    if (tex_name != "")
+    {
+        if (material_type == EPbrtMaterial::Disney)
+            stream << "\"texture color\" [ ";
+        else
+            stream << "\"texture " << field << "\" [ \"";
+        stream << tex_name.c_str() << "\" ] ";
+    }
+    else
+    {
+        size_t col_size = min((size_t)3, col.size());
+        if (col_size)
+        {
+            if (material_type == EPbrtMaterial::Disney)
+                stream << "\"rgb color\" [ ";
+            else
+                stream << "\"rgb " << field << "\" [ ";
+            for (int c_idx = 0; c_idx < col_size; c_idx++)
+                stream << col[c_idx] << " ";
+            stream << "] ";;
+        }
+    }
 }
+
 bool Material::ImportFromXML(XMLNode* node_lib_effect)
 {
 	XMLElement* node_effect = node_lib_effect->FirstChildElement("effect");
@@ -165,23 +228,13 @@ bool Material::ImportFromXML(XMLNode* node_lib_effect)
 							XMLElement* node = node_shading->FirstChildElement("diffuse");
 							if (node)
 							{
-								XMLElement* node_col = node->FirstChildElement("color");
-								if (node_col)
-								{
-									const char* idx_array = node_col->GetText();
-									Utils::ConvertStringToArray(idx_array, diffuse);
-								}
+                                diffuse.ImportFromXML(node, node_profile);
 							}
 
 							node = node_shading->FirstChildElement("specular");
 							if (node)
 							{
-								XMLElement* node_col = node->FirstChildElement("color");
-								if (node_col)
-								{
-									const char* idx_array = node_col->GetText();
-									Utils::ConvertStringToArray(idx_array, specular);
-								}
+								specular.ImportFromXML(node, node_profile);
 							}
 
 							node = node_shading->FirstChildElement("shininess");
@@ -193,6 +246,15 @@ bool Material::ImportFromXML(XMLNode* node_lib_effect)
 									shininess = node_col->FloatText();
 								}
 							}
+                            node = node_shading->FirstChildElement("transparency");
+                            if (node)
+                            {
+                                XMLElement* node_col = node->FirstChildElement("float");
+                                if (node_col)
+                                {
+                                    transparency = node_col->FloatText();
+                                }
+                            }
 						}
 					}
 				}
@@ -207,31 +269,9 @@ bool Material::ImportFromXML(XMLNode* node_lib_effect)
     return true;
 }
 
-Mesh::Mesh()
-{
-    Reset();
-}
-Mesh::~Mesh()
-{
-	
-}
-
-void Mesh::Reset()
-{
-    position_stride = 0;
-    normal_stride = 0;
-    texcoord_stride = 0;
-    positions.clear();
-    normals.clear();
-    texcoords.clear();
-    polycounts.clear();
-    polys.clear();
-}
-
+////////////////////////////////////////////////////////////////////////
 bool Mesh::ImportFromXML(XMLNode* node_mesh, bool skip_vertices)
 {
-    Reset();
-    
 	// extract source, vertices and polylist
 	XMLElement* node_tri = node_mesh->FirstChildElement("triangles");
 	if (node_tri)
@@ -276,6 +316,9 @@ bool Mesh::ImportVertices(XMLNode* node_mesh, XMLNode* node_poly)
 	{
 		const char* semantic = node_input->Attribute("semantic");
 		const char* source = node_input->Attribute("source");
+        int offset = node_input->IntAttribute("offset", 0);
+        max_offset = max(max_offset, offset);
+        
 		if (source && semantic)
 		{
 			const char* source_id = (source[0] == '#' ? source + 1 : source);
@@ -293,6 +336,7 @@ bool Mesh::ImportVertices(XMLNode* node_mesh, XMLNode* node_poly)
 						source_id = (source_pos[0] == '#' ? source_pos + 1 : source_pos);
 
                         position_stride = 3;
+                        position_offset = offset;
 						ExtractSourceFloatArray(node_mesh, source_id, 3, positions);
 					}
 				}
@@ -300,11 +344,13 @@ bool Mesh::ImportVertices(XMLNode* node_mesh, XMLNode* node_poly)
 			else if (0 == strcmp(semantic, "NORMAL"))
 			{
                 normal_stride = 3;
+                normal_offset = offset;
 				ExtractSourceFloatArray(node_mesh, source_id, 3, normals);
 			}
 			else if (0 == strcmp(semantic, "TEXCOORD"))
 			{
                 texcoord_stride = 2;
+                texcoord_offset = offset;
 				ExtractSourceFloatArray(node_mesh, source_id, 2, texcoords);
 			}
 		}
@@ -334,43 +380,63 @@ bool Mesh::ExtractSourceFloatArray(XMLNode* node_mesh, const char* source_id, co
 	return false;
 }
 
-void Mesh::Repair()
+void Mesh::BuildVertices()
 {
-    // ensure that mesh is not degenerated
-    size_t num_points = position_stride ? positions.size() / position_stride : 0;
-	size_t position_size = num_points * position_stride;
-    positions.resize(position_size);
-    
-	size_t num_normals = normal_stride ? normals.size() / normal_stride : 0;
-	size_t normal_size = num_normals * normal_stride;
-    normals.resize(normal_size);
-    if (normal_stride && num_normals < num_points)
+    // polylist can have multiple indices for each input source, we need to make a unique index list for PLY export
+    size_t num_faces = polycounts.size();
+    if (num_faces == 0)
     {
-        // warning: less normals than positions
-        normals.resize(num_points * normal_stride, 0.577350259f);
+        all_triangles = true;
+        num_faces = polys.size() / (3 * (max_offset + 1));
+        polycounts.resize(num_faces, 3);
+    }
+    else
+    {
+        all_triangles = false;
     }
     
-	size_t num_texcoords = texcoord_stride ? texcoords.size() / texcoord_stride : 0;
-	size_t texcoord_size = num_texcoords * texcoord_stride;
-    texcoords.resize(texcoord_size);
-    if (texcoord_stride && num_texcoords < num_points)
+    int num_face_indices = 0;
+    for (int face_idx = 0; face_idx < num_faces; ++face_idx)
     {
-        // warning: less texcoords than positions
-        texcoords.resize(num_points * texcoord_stride, 0.f);
+        int poly_size = polycounts[face_idx];
+        num_face_indices += poly_size;
     }
-    
-    // check for degenerate face (only triangles)
+    if (num_face_indices * (max_offset + 1) != polys.size())
+    {
+        // warning : should be the same
+        int brk = 0;
+    }
+
+    int g_offset = 0;
+    int v_offset = 0;
+    vertices.clear();
+    for (int face_idx = 0; face_idx < num_faces; ++face_idx)
+    {
+        int poly_size = polycounts[face_idx];
+        for (int poly_idx = 0; poly_idx < poly_size; ++poly_idx, v_offset += (max_offset + 1))
+        {
+            int position_index = polys[v_offset + position_offset];
+            int normal_index = polys[v_offset + normal_offset];
+            int texcoord_index = polys[v_offset + texcoord_offset];
+            auto ret = vertices.insert(pair<tuple<int, int, int>, int>(make_tuple(position_index, normal_index, texcoord_index), g_offset));
+            if (ret.second == true)
+                ++g_offset;
+        }
+    }
 }
 
-void Mesh::ExportToPly(ofstream& stream) const
+void Mesh::Repair()
 {
-    bool binary_data = false;
-    
-	size_t num_points = position_stride ? positions.size() / position_stride : 0;
-	size_t num_faces = polycounts.size() ? polycounts.size() : polys.size() / 3;
+ 
+}
+
+void Mesh::ExportToPly(ofstream& stream, bool binary_encoding) const
+{
+	size_t num_points = vertices.size();
+	size_t num_faces = polycounts.size();
     
     stream << "ply\n";
-    if(binary_data)
+    if (binary_encoding)
         stream << "format binary_little_endian 1.0\n";
     else
         stream << "format ascii 1.0\n";
@@ -391,65 +457,118 @@ void Mesh::ExportToPly(ofstream& stream) const
         stream << "property float nz\n";
     }
     
+    if (texcoord_stride)
+    {
+        stream << "property float u\n";
+        stream << "property float v\n";
+    }
+    
     stream << "element face " << num_faces << endl;
     
-    stream << "property list uchar int vertex_indices\n";
+    stream << "property list int int vertex_indices\n";
     stream << "end_header\n";
     
-    /*if (binary_data)
-    {
 
-    }
-    else*/
+    // write vertices
     {
-        for (int p_idx = 0; p_idx < num_points; ++p_idx)
+        int g_offset = 0;
+        int v_offset = 0;
+        for (int face_idx = 0; face_idx < num_faces; ++face_idx)
         {
-            for (int c_idx = 0; c_idx < position_stride; ++c_idx)
-                stream << positions[position_stride*p_idx + c_idx] << " ";
-            for (int c_idx = 0; c_idx < normal_stride; ++c_idx)
-                stream << normals[normal_stride*p_idx + c_idx] << " ";
-            stream << endl;
-        }
-        
-        if (polycounts.size())
-        {
-            int v_offset = 0;
-            for (int face_idx = 0; face_idx < polycounts.size(); ++face_idx)
+            int poly_size = polycounts[face_idx];
+            for (int poly_idx = 0; poly_idx < poly_size; ++poly_idx, v_offset += (max_offset + 1))
             {
-                int poly_size = polycounts[face_idx];
+                int position_index = polys[v_offset + position_offset];
+                int normal_index = polys[v_offset + normal_offset];
+                int texcoord_index = polys[v_offset + texcoord_offset];
+                tuple<int, int, int> vertex_index = make_tuple(position_index, normal_index, texcoord_index);
+                auto ret = vertices.find(vertex_index);
+                if (ret != vertices.end())
+                {
+                    if (g_offset == ret->second)
+                    {
+                        if (binary_encoding)
+                        {
+                            for (int c_idx = 0; c_idx < position_stride; ++c_idx)
+                                stream.write( (const char*)&positions[position_stride*position_index + c_idx], sizeof(float));
+                            for (int c_idx = 0; c_idx < normal_stride; ++c_idx)
+                                stream.write( (const char*)&normals[normal_stride*normal_index + c_idx], sizeof(float));
+                            for (int c_idx = 0; c_idx < texcoord_stride; ++c_idx)
+                                stream.write( (const char*)&texcoords[texcoord_stride*texcoord_index + c_idx], sizeof(float));
+                        }
+                        else
+                        {
+                            for (int c_idx = 0; c_idx < position_stride; ++c_idx)
+                                stream << positions[position_stride*position_index + c_idx] << " ";
+                            for (int c_idx = 0; c_idx < normal_stride; ++c_idx)
+                                stream << normals[normal_stride*normal_index + c_idx] << " ";
+                            for (int c_idx = 0; c_idx < texcoord_stride; ++c_idx)
+                                stream << texcoords[texcoord_stride*texcoord_index + c_idx] << " ";
+                            stream << endl;
+                        }
+                        
+                        ++g_offset;
+                    }
+                    else
+                    {
+                        // vertex was already written
+                    }
+                }
+                else
+                {
+                    int brk = 0;
+                }
+            }
+        }
+    }
+    
+    // write faces
+    {
+        int g_offset = 0;
+        int v_offset = 0;
+        for (int face_idx = 0; face_idx < num_faces; ++face_idx)
+        {
+            int poly_size = polycounts[face_idx];
+            if (binary_encoding)
+            {
+                stream.write((const char*)&poly_size, sizeof(int));
+            }
+            else
+            {
                 stream << poly_size << " ";
-                
-                for (int v_idx = 0; v_idx < poly_size; ++v_idx, ++v_offset)
-                    stream << polys[v_offset] << " ";
-                
-                stream << endl;
             }
-        }
-        else
-        {
-            for (int face_idx = 0; face_idx < num_faces; ++face_idx)
+            
+            for (int poly_idx = 0; poly_idx < poly_size; ++poly_idx, v_offset += (max_offset + 1))
             {
-                stream << "3 " << polys[3*face_idx] << " " << polys[3*face_idx + 1] << " " << polys[3*face_idx + 2] << endl;
+                int position_index = polys[v_offset + position_offset];
+                int normal_index = polys[v_offset + normal_offset];
+                int texcoord_index = polys[v_offset + texcoord_offset];
+                tuple<int, int, int> vertex_index = make_tuple(position_index, normal_index, texcoord_index);
+                auto ret = vertices.find(vertex_index);
+                if (ret != vertices.end())
+                {
+                    if (binary_encoding)
+                    {
+                        stream.write((const char*)&ret->second, sizeof(int));
+                    }
+                    else
+                    {
+                        stream << ret->second << " ";
+                    }
+                }
+                else
+                {
+                    int brk = 0;
+                }
             }
+            
+            if (!binary_encoding)
+                stream << endl;
         }
     }
 }
 
 ////////////////////////////////////////////////////////////////////////
-SceneNode::SceneNode()
-{
-    Reset();
-}
-SceneNode::~SceneNode()
-{
-    
-}
-
-void SceneNode::Reset()
-{
-    matrix.clear();
-}
-
 bool SceneNode::ImportFromXML(XMLNode* node_sub)
 {
     XMLElement* node_mat = node_sub->FirstChildElement("matrix");
@@ -504,6 +623,27 @@ Program::~Program()
 	scene_nodes.clear();
 }
 
+void Program::ImportTextures(XMLNode* node_lib)
+{
+    XMLElement* node_img = node_lib->FirstChildElement("image");
+    while (node_img)
+    {
+        const char* id = node_img->Attribute("id");
+        shared_ptr<Texture> tex( new Texture() );
+        tex->name = id;
+        
+        XMLElement* node_init = node_img->FirstChildElement("init_from");
+        if (node_init)
+        {
+            tex->path_name = node_init->GetText();
+        }
+        
+        textures[id] = tex;
+        
+        node_img = node_img->NextSiblingElement("image");
+    }
+}
+
 void Program::ImportMaterials(XMLNode* node_lib_mat, XMLNode* node_lib_effect)
 {
 	// parse material lib, and look for a corresponding fx
@@ -542,12 +682,15 @@ void Program::ImportMeshes(XMLNode* node_lib)
             shared_ptr<Mesh> mesh( new Mesh() );
             mesh->name = id;
 			mesh->ImportFromXML(node_mesh, options.skip_mesh);
+            mesh->BuildVertices();
             mesh->Repair();
 			meshes[id] = mesh;
 		}
 
 		node_geom = node_geom->NextSiblingElement("geometry");
 	}
+    
+    
 }
 
 void Program::ImportSceneNodes(XMLNode* node_root)
@@ -625,10 +768,10 @@ void Program::ExportPlyMeshes() const
         ply.open(plyname, ios::out | ios::binary);
         
         if (ply.is_open())
-            mesh->ExportToPly(ply);
+            mesh->ExportToPly(ply, !options.ply_ascii);
         else
         {
-            //cerr << "open failed: " << strerror(errno) << '\n';
+            cerr << "Error: open failed <" << plyname.c_str() << ">: " << strerror(errno) << "\n";
         }
     }
 }
@@ -648,6 +791,13 @@ void Program::ExportPbrtScene() const
         stream << "Include \"RenderIncl.pbrt\"\n\n";
         stream << "WorldBegin\n";
         stream << "\tInclude \"WorldIncl.pbrt\"\n";
+        
+        // list all textures
+        for (auto it_tex = textures.begin(); it_tex != textures.end(); ++it_tex)
+        {
+            shared_ptr<Texture> texture = it_tex->second;
+            stream << "\tTexture \"" << texture->name.c_str() << "\" \"color\" \"imagemap\" \"string filename\" [\"" << texture->path_name.c_str() << "\"]\n";
+        }
         
         // pbrt does not support instancing with different materials, so we need to create a specific object for each different combination of mesh + material
         set<string> unique_mm;
@@ -672,32 +822,19 @@ void Program::ExportPbrtScene() const
                         if (mat.get() && !mat->fx_name.empty())
                         {
                             stream << "\tMaterial \"" << options.default_material << "\" ";
-                            size_t diffuse_size = min((size_t)3, mat->diffuse.size());
-                            if (diffuse_size)
-                            {
-								if (options.material_type == EPbrtMaterial::Disney)
-									stream << "\"rgb color\" [ ";
-								else
-									stream << "\"rgb Kd\" [ ";
-                                for (int c_idx = 0; c_idx < diffuse_size; c_idx++)
-                                    stream << mat->diffuse[c_idx] << " ";
-                                stream << " ] ";;
-                            }
-							if (options.material_type != EPbrtMaterial::Disney)
-							{
-								size_t specular_size = min((size_t)3, mat->specular.size());
-								if (specular_size)
-								{
-									stream << "\"rgb Ks\" [ ";
-									for (int c_idx = 0; c_idx < specular_size; c_idx++)
-										stream << mat->specular[c_idx] << " ";
-									stream << " ] ";
-								}
-							}
-							else
+                            
+                            mat->diffuse.ExportPbrt(stream, "Kd", options.material_type);
+                            mat->specular.ExportPbrt(stream, "Ks", options.material_type);
+                            
+                            if (options.material_type == EPbrtMaterial::Disney ||
+                                options.material_type == EPbrtMaterial::Uber)
 							{
 								stream << "\"float roughness\" [0.5] ";// \"rgb scatterdistance\" [0.01 0.01 0.01] ";
 							}
+                            if (options.material_type == EPbrtMaterial::Uber && mat->transparency < 1.f)
+                            {
+                                stream << "\"rgb opacity\" [ " << mat->transparency << " " << mat->transparency << " " << mat->transparency << " ]";
+                            }
                             stream << endl;
                         }
                     }
@@ -822,6 +959,22 @@ XMLElement* Utils::FindNodeById(XMLNode* node_parent, const char* node_name, con
 		node = node->NextSiblingElement(node_name);
 	}
 	return nullptr;
+}
+
+XMLElement* Utils::FindNodeBySid(XMLNode* node_parent, const char* node_name, const char* node_id)
+{
+    XMLElement* node = node_parent->FirstChildElement(node_name);
+    while (node)
+    {
+        const char* str_id = node->Attribute("sid");
+        if (0 == strcmp(str_id, node_id))
+        {
+            return node;
+        }
+        
+        node = node->NextSiblingElement(node_name);
+    }
+    return nullptr;
 }
 
 void Utils::ExtractFilePath(const string& fullname, string& out_path)
