@@ -63,6 +63,8 @@ namespace dae2pbrt
     {
         string name = "";
         string path_name = "";
+        string alpha_name = "";
+        string alpha_path_name = "";
     };
 
 	struct Material
@@ -142,6 +144,8 @@ namespace dae2pbrt
         bool ply_ascii = false;
         /** Whether to log message other than errors */
         bool quiet = false;
+        /** Whether to extract texture alpha channel and treat as mask for glass material */
+        bool alpha_channel_to_glass = true;
 		
 	};
 
@@ -156,6 +160,7 @@ namespace dae2pbrt
 		void ImportMeshes(XMLNode* node_lib);
 		void ImportSceneNodes(XMLNode* node_root);
         void ImportSubNodes(XMLNode* node_parent, bool visual_node = false, SceneNode* parent = nullptr);
+        void ExportTextureAlphaChannels();
         void ExportPlyMeshes() const;
         void ExportPbrtScene() const;
         void ExportPbrtNode(ofstream& stream, SceneNode* scene_node, int indent_level) const;

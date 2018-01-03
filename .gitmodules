@@ -1,3 +1,7 @@
 [submodule "src/ext/tinyxml2"]
 	path = src/ext/tinyxml2
 	url = https://github.com/leethomason/tinyxml2.git
+
+[submodule "src/ext/stb"]
+	path = src/ext/stb
+	url = https://github.com/nothings/stb.git

@@ -27,6 +27,10 @@
 #include <iostream>
 #include <algorithm>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb/stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb/stb_image_write.h"
 
 using namespace dae2pbrt;
 
@@ -40,6 +44,7 @@ void Usage(const char* error = nullptr)
     cerr << "--help                 Print this help text.\n";
     cerr << "--material <materail>  Use one of the following material for pbrt : matte, plastic, disney, uber.\n";
     cerr << "--skipmesh             Do not export PLY meshes.\n";
+    cerr << "--noalphaglass         Do not extract texture alpha channel and treat as mask for glass material.\n";
     cerr << "--plyascii             Use ASCII encoding when exporting PLY meshes.\n";
     cerr << "--quiet                Suppress all text output other than error messages.\n";
 }
@@ -62,6 +67,9 @@ int main(int argc, char *argv[])
 		}
 		else if (!strcmp(argv[i], "--skipmesh") || !strcmp(argv[i], "-skipmesh")) {
 			program.options.skip_mesh = true;
+        }
+        else if (!strcmp(argv[i], "--noalphaglass") || !strcmp(argv[i], "-noalphaglass")) {
+            program.options.alpha_channel_to_glass = false;
         }
         else if (!strcmp(argv[i], "--plyascii") || !strcmp(argv[i], "-plyascii")) {
             program.options.ply_ascii = true;
@@ -117,6 +125,7 @@ int main(int argc, char *argv[])
 
 	program.ImportSceneNodes(node_root);
 
+    program.ExportTextureAlphaChannels();
     program.ExportPlyMeshes();
     program.ExportPbrtScene();
         
@@ -644,6 +653,61 @@ void Program::ImportTextures(XMLNode* node_lib)
     }
 }
 
+void Program::ExportTextureAlphaChannels()
+{
+    if (!options.alpha_channel_to_glass)
+        return;
+    
+    string base_path, tex_filename;
+    Utils::ExtractFilePath(options.filename, base_path);
+    
+    for (auto it_tex = textures.begin(); it_tex != textures.end(); ++it_tex)
+    {
+        shared_ptr<Texture> texture = it_tex->second;
+        tex_filename = base_path + texture->path_name;
+        
+        if (stbi_is_hdr(tex_filename.c_str()))
+            continue;
+        
+        int img_width = 0, img_height = 0, img_comp = 0;
+        unsigned char* img_data = stbi_load(tex_filename.c_str(), &img_width, &img_height, &img_comp, 0);
+        
+        // only consider image with alpha
+        if (img_comp == 4 && img_data)
+        {
+            vector<unsigned char> alpha_data(img_width * img_height, 0);
+            
+            unsigned char min_alpha = 255;
+            for (int y = 0; y < img_height; ++y)
+            {
+                for (int x = 0; x < img_width; ++x)
+                {
+                    unsigned char alpha = img_data[img_comp*(img_width * y + x) + 3];
+                    alpha_data[img_width * y + x] = alpha;
+                    min_alpha = min(min_alpha, alpha);
+                }
+            }
+            
+            if (min_alpha == 255)
+                continue;
+            
+            string img_path, img_filename, img_ext, alpha_filename;
+            Utils::ExtractFilePath(texture->path_name, img_path, img_filename, img_ext);
+            texture->alpha_name = img_filename + "_alpha_png";
+            texture->alpha_path_name = img_path + img_filename + "_alpha.png";
+            alpha_filename = base_path + texture->alpha_path_name;
+            
+            if (!stbi_write_png(alpha_filename.c_str(), img_width, img_height, 1, &alpha_data[0], img_width))
+            {
+                texture->alpha_name = "";
+                cerr << "Error: could not write <" << alpha_filename.c_str() << ">\n";
+            }
+        }
+        
+        stbi_image_free(img_data);
+    }
+}
+
 void Program::ImportMaterials(XMLNode* node_lib_mat, XMLNode* node_lib_effect)
 {
 	// parse material lib, and look for a corresponding fx
@@ -797,6 +861,16 @@ void Program::ExportPbrtScene() const
         {
             shared_ptr<Texture> texture = it_tex->second;
             stream << "\tTexture \"" << texture->name.c_str() << "\" \"color\" \"imagemap\" \"string filename\" [\"" << texture->path_name.c_str() << "\"]\n";
+            if (texture->alpha_name != "")
+            {
+                stream << "\tTexture \"" << texture->alpha_name.c_str() << "\" \"color\" \"imagemap\" \"string filename\" [\"" << texture->alpha_path_name.c_str() << "\"]\n";
+            }
+        }
+        
+        // create glass material required for alpha textures
+        if (options.alpha_channel_to_glass)
+        {
+            stream << "\tMakeNamedMaterial \"mixglass\" \"string type\" \"glass\" \"rgb Kr\" [0.5 0.5 0.5] \"rgb Kt\" [0.5 0.5 0.5]\n\n";
         }
         
         // pbrt does not support instancing with different materials, so we need to create a specific object for each different combination of mesh + material
@@ -821,7 +895,26 @@ void Program::ExportPbrtScene() const
 						shared_ptr<Material> const& mat = it_mat->second;
                         if (mat.get() && !mat->fx_name.empty())
                         {
-                            stream << "\tMaterial \"" << options.default_material << "\" ";
+                            bool create_mix_material = false;
+                            const char* alpha_cstr = nullptr;
+                            if (options.alpha_channel_to_glass)
+                            {
+                                // if alpha channel was extracted, we need to create an intermediate material to blend base material with glass
+                                auto it_ref_tex = textures.find(mat->diffuse.tex_name);
+                                if (it_ref_tex != textures.end())
+                                {
+                                    shared_ptr<Texture> tex_ref = it_ref_tex->second;
+                                    if (tex_ref->alpha_name != "")
+                                    {
+                                        alpha_cstr = tex_ref->alpha_name.c_str();
+                                        create_mix_material = true;
+                                    }
+                                }
+                            }
+                            if (create_mix_material)
+                                stream << "\tMakeNamedMaterial \"mat-" << mm_name.c_str() << "\" \"string type\" \"" << options.default_material << "\" ";
+                            else
+                                stream << "\tMaterial \"" << options.default_material << "\" ";
                             
                             mat->diffuse.ExportPbrt(stream, "Kd", options.material_type);
                             mat->specular.ExportPbrt(stream, "Ks", options.material_type);
@@ -836,6 +929,11 @@ void Program::ExportPbrtScene() const
                                 stream << "\"rgb opacity\" [ " << mat->transparency << " " << mat->transparency << " " << mat->transparency << " ]";
                             }
                             stream << endl;
+                            
+                            if (create_mix_material)
+                            {
+                                stream << "\tMaterial \"mix\" \"string namedmaterial1\" [ \"mat-" << mm_name.c_str() << "\" ] \"string namedmaterial2\" [ \"mixglass\" ] \"texture amount\" [ \"" << alpha_cstr << "\" ]\n";
+                            }
                         }
                     }
                     
